@@ -1,0 +1,12 @@
+[project]
+name = "aibidder-worker"
+version = "0.1.0"
+description = "AIBidder background worker"
+requires-python = ">=3.12"
+dependencies = [
+  "redis>=6.4.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
