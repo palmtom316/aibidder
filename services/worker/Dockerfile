@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
 
 COPY worker ./worker
 
-CMD ["python", "-m", "worker.main"]
+CMD ["celery", "-A", "worker.celery_app.celery_app", "worker", "--loglevel=INFO"]

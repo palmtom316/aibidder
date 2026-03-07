@@ -1,32 +1,49 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_JWT_SECRET = "change-me-in-production"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
     app_name: str = "aibidder-api"
     env: str = "dev"
+
     database_url: str | None = None
     postgres_db: str = "aibidder"
     postgres_user: str = "aibidder"
     postgres_password: str = "aibidder"
-    postgres_host: str | None = None
+    postgres_host: str = "postgres"
     postgres_port: int = 5432
-    jwt_secret_key: str = "change-me-in-production"
+    auto_create_schema: bool = False
+
+    jwt_secret_key: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 120
+    refresh_token_expire_minutes: int = 60 * 24 * 14
+    login_rate_limit_attempts: int = 5
+    login_rate_limit_window_seconds: int = 300
+
     storage_root: str = "./storage"
+    storage_backend: str = "local"
+    minio_endpoint: str = "http://minio:9000"
+    minio_access_key: str = "minio"
+    minio_secret_key: str = "minio123"
+    minio_bucket: str = "aibidder"
+
     cors_allowed_origins: str = (
         "http://localhost:3000,"
         "http://127.0.0.1:3000,"
         "http://localhost:13000,"
         "http://127.0.0.1:13000"
     )
+
     model_provider: str = "openai_compatible"
     default_model_name: str = "gpt-4.1-mini"
     model_api_base_url: str | None = None
     model_api_key: str | None = None
+
     runtime_provider: str = "openai_compatible"
     runtime_api_base_url: str = "https://api.siliconflow.cn/v1"
     runtime_api_key: str | None = None
@@ -37,16 +54,22 @@ class Settings(BaseSettings):
     reviewer_role_model: str = "deepseek-ai/DeepSeek-R1"
     adjudicator_role_model: str = "deepseek-ai/DeepSeek-R1"
 
+    async_document_ingestion: bool = False
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/1"
+
     @model_validator(mode="after")
     def assemble_database_url(self) -> "Settings":
         if not self.database_url:
-            if self.postgres_host:
+            if self.env.lower() == "test":
+                self.database_url = "sqlite:///./aibidder-test.db"
+            else:
                 self.database_url = (
                     f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
                     f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
                 )
-            else:
-                self.database_url = "sqlite:///./aibidder.db"
+        if self.env.lower() in {"prod", "production"} and self.jwt_secret_key == DEFAULT_JWT_SECRET:
+            raise ValueError("JWT_SECRET_KEY must be overridden in production")
         return self
 
     def runtime_default_models(self) -> dict[str, str]:

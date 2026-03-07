@@ -53,6 +53,11 @@ import {
   getWorkbenchOverview,
   WorkbenchOverview,
 } from "../lib/api";
+import { CopilotPanel } from "../components/copilot-panel";
+import { HeroPanel } from "../components/hero-panel";
+import { ModuleStrip } from "../components/module-strip";
+import { SettingsDrawer } from "../components/settings-drawer";
+import { WorkspaceSidebar } from "../components/workspace-sidebar";
 import { clearStoredToken, getStoredToken, setStoredToken } from "../lib/session";
 
 type RuntimeFormState = {
@@ -71,6 +76,34 @@ const EMPTY_MODELS: RuntimeSettings["default_models"] = {
   reviewer_role: "deepseek-ai/DeepSeek-R1",
   adjudicator_role: "deepseek-ai/DeepSeek-R1",
 };
+
+type WorkspaceModule =
+  | "overview"
+  | "documents"
+  | "evidence"
+  | "historical"
+  | "decomposition"
+  | "generation-review";
+
+type CopilotMessage = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+};
+
+const WORKSPACE_MODULES: Array<{
+  id: WorkspaceModule;
+  label: string;
+  hint: string;
+  shortLabel: string;
+}> = [
+  { id: "overview", label: "项目总览", hint: "当前项目与任务概况", shortLabel: "总" },
+  { id: "documents", label: "文档上传", hint: "项目、文档、资料库", shortLabel: "文" },
+  { id: "evidence", label: "证据检索", hint: "真值证据与命中定位", shortLabel: "证" },
+  { id: "historical", label: "历史复用", hint: "历史标书与污染校验", shortLabel: "史" },
+  { id: "decomposition", label: "招标拆解", hint: "解析任务与拆解流程", shortLabel: "拆" },
+  { id: "generation-review", label: "生成与复核", hint: "生成、检测、排版、管理", shortLabel: "生" },
+];
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -147,6 +180,18 @@ export default function Home() {
   const [leakageForbiddenTerms, setLeakageForbiddenTerms] = useState("");
   const [leakageReuseUnitIds, setLeakageReuseUnitIds] = useState("");
   const [leakageResult, setLeakageResult] = useState<{ ok: boolean; matched_terms: string[] } | null>(null);
+  const [activeModule, setActiveModule] = useState<WorkspaceModule>("overview");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotDraft, setCopilotDraft] = useState("");
+  const [copilotMessages, setCopilotMessages] = useState<CopilotMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "我是 Copilot。默认保持隐藏，需要时我可以解释当前模块、帮你导航，或提示下一步操作。",
+    },
+  ]);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -161,6 +206,11 @@ export default function Home() {
   const selectedHistoricalBid = useMemo(
     () => historicalBids.find((item) => item.id === selectedHistoricalBidId) ?? null,
     [historicalBids, selectedHistoricalBidId],
+  );
+
+  const activeModuleMeta = useMemo(
+    () => WORKSPACE_MODULES.find((module) => module.id === activeModule) ?? WORKSPACE_MODULES[0],
+    [activeModule],
   );
 
   useEffect(() => {
@@ -674,87 +724,109 @@ export default function Home() {
     setMessage("已退出登录。");
   }
 
-  return (
-    <main className="console-shell">
-      <aside className="console-sidebar">
-        <div>
-          <p className="eyebrow">Local Integration</p>
-          <h1>AIBidder Console</h1>
-          <p className="sidebar-copy">
-            本地联调用于验证登录、项目、文档、证据、历史标书复用和 BYOK 运行时设置。
-          </p>
-        </div>
-        <div className="status-card">
-          <span className="status-dot" />
-          <div>
-            <strong>{busyLabel || "就绪"}</strong>
-            <p>{message}</p>
-          </div>
-        </div>
-        <div className="seed-box">
-          <strong>默认账号</strong>
-          <p>admin@example.com / admin123456</p>
-          <p>project_manager@example.com / manager123456</p>
-        </div>
-        {token ? (
-          <button className="ghost-button" onClick={handleLogout} type="button">
-            退出登录
-          </button>
-        ) : null}
-      </aside>
+  function appendCopilotMessage(role: CopilotMessage["role"], text: string) {
+    setCopilotMessages((current) => [
+      ...current,
+      { id: `${role}-${Date.now()}-${current.length}`, role, text },
+    ]);
+  }
 
-      <section className="console-main">
-        <div className="hero-panel">
-          <div>
-            <p className="eyebrow">Workbench</p>
-            <h2>前后端与数据库联调工作台</h2>
-            <p>
-              当前重点是把投标资料库、招标解析、标书生成、标书检测、排版定稿和标书管理六个模块挂到同一套前后端和数据库上，并保留证据检索与历史标书复用闭环。
-            </p>
-          </div>
-          <div className="hero-stats">
-            <div>
-              <span>项目</span>
-              <strong>{projects.length}</strong>
-            </div>
-            <div>
-              <span>文档</span>
-              <strong>{documents.length}</strong>
-            </div>
-            <div>
-              <span>历史标书</span>
-              <strong>{historicalBids.length}</strong>
-            </div>
-          </div>
-        </div>
+  function buildCopilotReply(prompt: string) {
+    const normalized = prompt.trim().toLowerCase();
+    const moduleLabel = activeModuleMeta.label;
+    const projectLabel = selectedProject?.name ? `当前项目是「${selectedProject.name}」。` : "当前还没有选中项目。";
 
-        <section className="module-strip">
-          {(workbenchOverview?.modules ?? []).map((module) => (
-            <article className="module-card" key={module.module_key}>
-              <div className="module-card-header">
-                <strong>{module.title}</strong>
-                <span className={`badge ${module.status === "ready" ? "badge-success" : ""}`}>
-                  {module.status}
-                </span>
-              </div>
-              <p>{module.description}</p>
-              <div className="module-card-footer">
-                <span>{module.module_key}</span>
-                <strong>{module.count}</strong>
-              </div>
-            </article>
-          ))}
-        </section>
+    if (normalized.includes("上传")) {
+      setActiveModule("documents");
+      return `${projectLabel}我已经把你带到「文档上传」模块，建议先完成项目选择，再上传招标文件或规范文件。`;
+    }
+    if (normalized.includes("证据")) {
+      setActiveModule("evidence");
+      return `${projectLabel}我已经切到「证据检索」模块。你可以先选择文档，再检索工期、资格要求、质量目标等真值信息。`;
+    }
+    if (normalized.includes("历史")) {
+      setActiveModule("historical");
+      return `${projectLabel}我已经切到「历史复用」模块。这里适合做历史标书导入、reuse pack 检索和污染校验。`;
+    }
+    if (normalized.includes("设置") || normalized.includes("api") || normalized.includes("模型")) {
+      setSettingsOpen(true);
+      return "我已打开设置抽屉。运行时 Provider、Base URL、API Key 和角色模型都收纳在这里。";
+    }
 
-        <div className="panel-grid">
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Auth</p>
-                <h3>登录</h3>
-              </div>
-              <span className={`badge ${token ? "badge-success" : ""}`}>{token ? "已登录" : "未登录"}</span>
+    return `你当前位于「${moduleLabel}」。${projectLabel}如果你愿意，我可以继续帮你解释这个模块的下一步操作，或者直接帮你跳到上传、证据检索、历史复用、招标拆解、生成与复核。`;
+  }
+
+  function handleCopilotSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const prompt = copilotDraft.trim();
+    if (!prompt) {
+      return;
+    }
+    appendCopilotMessage("user", prompt);
+    setCopilotDraft("");
+    setCopilotOpen(true);
+    appendCopilotMessage("assistant", buildCopilotReply(prompt));
+  }
+
+  function handleCopilotQuickAction(actionId: string) {
+    setCopilotOpen(true);
+    switch (actionId) {
+      case "go-documents":
+        setActiveModule("documents");
+        appendCopilotMessage("assistant", "已切换到「文档上传」模块。你可以先创建/选择项目，再上传文档。");
+        break;
+      case "go-evidence":
+        setActiveModule("evidence");
+        appendCopilotMessage("assistant", "已切换到「证据检索」模块。建议先点击一份文档查看已抽取的 evidence units。");
+        break;
+      case "go-historical":
+        setActiveModule("historical");
+        appendCopilotMessage("assistant", "已切换到「历史复用」模块。这里可以完成历史标书导入、重建与污染校验。");
+        break;
+      case "go-decomposition":
+        setActiveModule("decomposition");
+        appendCopilotMessage("assistant", "已切换到「招标拆解」模块。这里聚焦解析任务与拆解流程。");
+        break;
+      case "go-generation":
+        setActiveModule("generation-review");
+        appendCopilotMessage("assistant", "已切换到「生成与复核」模块。这里包含生成、检测、排版与提交管理。");
+        break;
+      case "open-settings":
+        setSettingsOpen(true);
+        appendCopilotMessage("assistant", "已打开设置抽屉。所有技术性配置都收纳在设置中。");
+        break;
+      default:
+        appendCopilotMessage("assistant", "我已记录你的意图。你可以继续问我要做什么，或者直接点模块切换。");
+        break;
+    }
+  }
+
+  const copilotQuickActions = [
+    { id: "go-documents", label: "去上传文档" },
+    { id: "go-evidence", label: "去查证据" },
+    { id: "go-historical", label: "去看历史复用" },
+    { id: "go-decomposition", label: "去看招标拆解" },
+    { id: "go-generation", label: "去看生成与复核" },
+    { id: "open-settings", label: "打开设置" },
+  ];
+
+  function renderLoginWorkspace() {
+    return (
+      <section className="workspace-stack">
+        <HeroPanel
+          projectCount={projects.length}
+          documentCount={documents.length}
+          historicalBidCount={historicalBids.length}
+        />
+        <section className="surface-card surface-card-login">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Access</p>
+              <h3>登录后进入 Copilot 工作区</h3>
             </div>
+            <span className="badge">登录必需</span>
+          </div>
+          <div className="workspace-grid workspace-grid-2">
             <form className="stack" onSubmit={handleLogin}>
               <label>
                 邮箱
@@ -773,107 +845,110 @@ export default function Home() {
                   onChange={(event) => setLoginPassword(event.target.value)}
                 />
               </label>
-              <button className="primary-button" type="submit" disabled={Boolean(busyLabel)}>
-                登录并载入控制台
+              <button className="primary-button" disabled={Boolean(busyLabel)} type="submit">
+                登录并进入工作区
               </button>
             </form>
-          </section>
 
-          <section className="panel panel-span-2">
+            <div className="stack">
+              <div className="info-block">
+                <strong>界面原则</strong>
+                <p>左侧切模块，中间只做一件事，右侧 Copilot 默认隐藏，设置全部收纳到抽屉里。</p>
+              </div>
+              <div className="info-block">
+                <strong>默认账号</strong>
+                <p>`admin@example.com` / `admin123456`</p>
+                <p>`project_manager@example.com` / `manager123456`</p>
+              </div>
+              <div className="info-block">
+                <strong>Copilot 作用</strong>
+                <p>解释当前模块、提示下一步、代你导航到上传、证据检索、历史复用、招标拆解和生成复核。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    );
+  }
+
+  function renderOverviewModule() {
+    return (
+      <section className="workspace-stack">
+        <HeroPanel
+          projectCount={projects.length}
+          documentCount={documents.length}
+          historicalBidCount={historicalBids.length}
+        />
+        <ModuleStrip modules={workbenchOverview?.modules ?? []} />
+        <div className="workspace-grid workspace-grid-2">
+          <section className="surface-card">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">BYOK</p>
-                <h3>运行时模型设置</h3>
+                <p className="eyebrow">Overview</p>
+                <h3>当前项目上下文</h3>
               </div>
-              <span className="badge">{runtimeForm.provider}</span>
+              <span className="badge">{selectedProject ? selectedProject.name : "未选择项目"}</span>
             </div>
-            <form className="stack" onSubmit={handleConnectivityCheck}>
-              <div className="two-column">
-                <label>
-                  Provider
-                  <input
-                    value={runtimeForm.provider}
-                    onChange={(event) =>
-                      setRuntimeForm((current) => ({ ...current, provider: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  API Base URL
-                  <input
-                    value={runtimeForm.apiBaseUrl}
-                    onChange={(event) =>
-                      setRuntimeForm((current) => ({ ...current, apiBaseUrl: event.target.value }))
-                    }
-                  />
-                </label>
+            <div className="summary-list">
+              <div className="summary-item">
+                <span>项目数</span>
+                <strong>{projects.length}</strong>
               </div>
-              <div className="two-column">
-                <label>
-                  API Key
-                  <input
-                    autoComplete="new-password"
-                    type="password"
-                    value={runtimeForm.apiKey}
-                    placeholder={runtimeSettings?.api_key_configured ? "后端已配置，可覆盖" : "输入调试用 BYOK"}
-                    onChange={(event) =>
-                      setRuntimeForm((current) => ({ ...current, apiKey: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  连通性校验角色
-                  <select
-                    value={runtimeForm.selectedRole}
-                    onChange={(event) =>
-                      setRuntimeForm((current) => ({
-                        ...current,
-                        selectedRole: event.target.value as RuntimeFormState["selectedRole"],
-                      }))
-                    }
-                  >
-                    {Object.keys(runtimeForm.defaultModels).map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <div className="summary-item">
+                <span>文档数</span>
+                <strong>{documents.length}</strong>
               </div>
-              <div className="role-grid">
-                {Object.entries(runtimeForm.defaultModels).map(([role, model]) => (
-                  <label key={role}>
-                    {role}
-                    <input
-                      value={model}
-                      onChange={(event) =>
-                        setRuntimeForm((current) => ({
-                          ...current,
-                          defaultModels: {
-                            ...current.defaultModels,
-                            [role]: event.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                ))}
+              <div className="summary-item">
+                <span>历史标书</span>
+                <strong>{historicalBids.length}</strong>
               </div>
-              <button className="primary-button" type="submit" disabled={!token || Boolean(busyLabel)}>
-                运行模型连通性检查
+            </div>
+            <div className="inline-actions">
+              <button className="ghost-button" onClick={() => setActiveModule("documents")} type="button">
+                去上传文档
               </button>
-              {connectivityResult ? (
-                <div className={`message-box ${connectivityResult.ok ? "message-success" : "message-warning"}`}>
-                  <strong>{connectivityResult.ok ? "连通成功" : "连通失败"}</strong>
-                  <p>
-                    {connectivityResult.model} · {connectivityResult.message}
-                  </p>
-                </div>
-              ) : null}
-            </form>
+              <button className="ghost-button" onClick={() => setActiveModule("evidence")} type="button">
+                去查证据
+              </button>
+              <button className="ghost-button" onClick={() => setCopilotOpen(true)} type="button">
+                打开 Copilot
+              </button>
+            </div>
           </section>
 
-          <section className="panel">
+          <section className="surface-card">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Recent</p>
+                <h3>最近活动</h3>
+              </div>
+              <span className="badge">{busyLabel || "空闲"}</span>
+            </div>
+            <div className="stack">
+              <div className="info-block">
+                <strong>最近消息</strong>
+                <p>{message}</p>
+              </div>
+              <div className="info-block">
+                <strong>当前文档</strong>
+                <p>{selectedDocument ? `${selectedDocument.filename} · ${selectedDocument.document_type}` : "未选择文档"}</p>
+              </div>
+              <div className="info-block">
+                <strong>当前历史标书</strong>
+                <p>{selectedHistoricalBid ? `#${selectedHistoricalBid.id} · ${selectedHistoricalBid.project_type}` : "未选择历史标书"}</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    );
+  }
+
+  function renderDocumentsModule() {
+    return (
+      <section className="workspace-stack">
+        <div className="workspace-grid workspace-grid-3">
+          <section className="surface-card">
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Projects</p>
@@ -887,24 +962,10 @@ export default function Home() {
                 value={projectName}
                 onChange={(event) => setProjectName(event.target.value)}
               />
-              <button className="primary-button" type="submit" disabled={!token || Boolean(busyLabel)}>
+              <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
                 创建
               </button>
             </form>
-            <label>
-              当前项目
-              <select
-                value={selectedProjectId ?? ""}
-                onChange={(event) => setSelectedProjectId(Number(event.target.value) || null)}
-              >
-                <option value="">请选择项目</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.id} · {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <form className="stack" onSubmit={handleUploadDocument}>
               <div className="two-column">
                 <label>
@@ -917,16 +978,13 @@ export default function Home() {
                 </label>
                 <label>
                   上传文件
-                  <input
-                    type="file"
-                    onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
-                  />
+                  <input type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} />
                 </label>
               </div>
               <button
                 className="primary-button"
-                type="submit"
                 disabled={!token || !selectedProjectId || !uploadFile || Boolean(busyLabel)}
+                type="submit"
               >
                 上传文档
               </button>
@@ -951,7 +1009,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="panel panel-span-2">
+          <section className="surface-card workspace-span-2">
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Knowledge Library</p>
@@ -960,7 +1018,7 @@ export default function Home() {
               <span className="badge">{knowledgeBaseEntries.length} 条资料</span>
             </div>
             <form className="stack" onSubmit={handleCreateLibraryEntry}>
-              <div className="three-column">
+              <div className="three-column three-column-equal">
                 <label>
                   资料分类
                   <select value={libraryCategory} onChange={(event) => setLibraryCategory(event.target.value)}>
@@ -987,8 +1045,8 @@ export default function Home() {
               </div>
               <button
                 className="primary-button"
-                type="submit"
                 disabled={!token || !selectedProjectId || !libraryTitle.trim() || Boolean(busyLabel)}
+                type="submit"
               >
                 登记入库并生成检测任务
               </button>
@@ -1005,11 +1063,7 @@ export default function Home() {
                   </div>
                   <div className="list-actions">
                     <span>{entry.detection_status}</span>
-                    <button
-                      className="ghost-button"
-                      onClick={() => void handleRunLibraryCheck(entry.id)}
-                      type="button"
-                    >
+                    <button className="ghost-button" onClick={() => void handleRunLibraryCheck(entry.id)} type="button">
                       运行检测
                     </button>
                   </div>
@@ -1017,245 +1071,91 @@ export default function Home() {
               ))}
             </div>
           </section>
+        </div>
+      </section>
+    );
+  }
 
-          <section className="panel panel-span-3">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Pipelines</p>
-                <h3>招标解析、标书生成、标书检测、排版定稿、标书管理</h3>
-              </div>
-              <span className="badge">{selectedProject ? selectedProject.name : "未选择项目"}</span>
+  function renderEvidenceModule() {
+    return (
+      <section className="workspace-stack">
+        <section className="surface-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Evidence</p>
+              <h3>真值证据检索</h3>
             </div>
-            <div className="workbench-grid">
-              <form className="stack workbench-card" onSubmit={handleCreateDecompositionRun}>
-                <div className="panel-header compact">
-                  <div>
-                    <p className="eyebrow">招标解析</p>
-                    <h4>Decomposition</h4>
-                  </div>
-                  <span className="badge">{decompositionRuns.length}</span>
-                </div>
-                <label>
-                  任务名
-                  <input value={decompositionRunName} onChange={(event) => setDecompositionRunName(event.target.value)} />
-                </label>
-                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
-                  创建解析任务
+            <span className="badge">{evidenceResults.length} 命中</span>
+          </div>
+          <form className="stack" onSubmit={handleSearchEvidence}>
+            <div className="three-column">
+              <label>
+                关键词
+                <input
+                  value={evidenceQuery}
+                  onChange={(event) => setEvidenceQuery(event.target.value)}
+                  placeholder="例如：工期、资格要求、质量目标"
+                />
+              </label>
+              <label>
+                文档范围
+                <select value={evidenceDocumentType} onChange={(event) => setEvidenceDocumentType(event.target.value)}>
+                  <option value="">全部真值文档</option>
+                  <option value="tender">tender</option>
+                  <option value="norm">norm</option>
+                </select>
+              </label>
+              <div className="align-end">
+                <button
+                  className="primary-button"
+                  disabled={!token || !selectedProjectId || !evidenceQuery.trim() || Boolean(busyLabel)}
+                  type="submit"
+                >
+                  检索 evidence
                 </button>
-                <div className="mini-list">
-                  {decompositionRuns.map((row) => (
-                    <div className="mini-item" key={row.id}>
-                      <strong>{row.run_name}</strong>
-                      <span>{row.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </form>
-
-              <form className="stack workbench-card" onSubmit={handleCreateGenerationJob}>
-                <div className="panel-header compact">
-                  <div>
-                    <p className="eyebrow">标书生成</p>
-                    <h4>Generation</h4>
-                  </div>
-                  <span className="badge">{generationJobs.length}</span>
-                </div>
-                <label>
-                  任务名
-                  <input value={generationJobName} onChange={(event) => setGenerationJobName(event.target.value)} />
-                </label>
-                <label>
-                  目标章节数
-                  <input
-                    type="number"
-                    min="0"
-                    value={generationTargetSections}
-                    onChange={(event) => setGenerationTargetSections(event.target.value)}
-                  />
-                </label>
-                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
-                  创建生成任务
-                </button>
-                <div className="mini-list">
-                  {generationJobs.map((row) => (
-                    <div className="mini-item" key={row.id}>
-                      <strong>{row.job_name}</strong>
-                      <span>{row.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </form>
-
-              <form className="stack workbench-card" onSubmit={handleCreateReviewRun}>
-                <div className="panel-header compact">
-                  <div>
-                    <p className="eyebrow">标书检测</p>
-                    <h4>Review</h4>
-                  </div>
-                  <span className="badge">{reviewRuns.length}</span>
-                </div>
-                <label>
-                  任务名
-                  <input value={reviewRunName} onChange={(event) => setReviewRunName(event.target.value)} />
-                </label>
-                <label>
-                  模式
-                  <select value={reviewMode} onChange={(event) => setReviewMode(event.target.value)}>
-                    <option value="simulated_scoring">simulated_scoring</option>
-                    <option value="compliance_review">compliance_review</option>
-                  </select>
-                </label>
-                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
-                  创建检测任务
-                </button>
-                <div className="mini-list">
-                  {reviewRuns.map((row) => (
-                    <div className="mini-item" key={row.id}>
-                      <strong>{row.run_name}</strong>
-                      <span>{row.review_mode}</span>
-                    </div>
-                  ))}
-                </div>
-              </form>
-
-              <form className="stack workbench-card" onSubmit={handleCreateLayoutJob}>
-                <div className="panel-header compact">
-                  <div>
-                    <p className="eyebrow">排版定稿</p>
-                    <h4>Layout</h4>
-                  </div>
-                  <span className="badge">{layoutJobs.length}</span>
-                </div>
-                <label>
-                  任务名
-                  <input value={layoutJobName} onChange={(event) => setLayoutJobName(event.target.value)} />
-                </label>
-                <label>
-                  模板
-                  <input value={layoutTemplateName} onChange={(event) => setLayoutTemplateName(event.target.value)} />
-                </label>
-                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
-                  创建排版任务
-                </button>
-                <div className="mini-list">
-                  {layoutJobs.map((row) => (
-                    <div className="mini-item" key={row.id}>
-                      <strong>{row.job_name}</strong>
-                      <span>{row.template_name}</span>
-                    </div>
-                  ))}
-                </div>
-              </form>
-
-              <form className="stack workbench-card" onSubmit={handleCreateSubmissionRecord}>
-                <div className="panel-header compact">
-                  <div>
-                    <p className="eyebrow">标书管理</p>
-                    <h4>Submission</h4>
-                  </div>
-                  <span className="badge">{submissionRecords.length}</span>
-                </div>
-                <label>
-                  标题
-                  <input value={submissionTitle} onChange={(event) => setSubmissionTitle(event.target.value)} />
-                </label>
-                <label>
-                  状态
-                  <select value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value)}>
-                    <option value="draft">draft</option>
-                    <option value="ready_for_submission">ready_for_submission</option>
-                    <option value="submitted">submitted</option>
-                    <option value="archived">archived</option>
-                  </select>
-                </label>
-                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
-                  创建管理记录
-                </button>
-                <div className="mini-list">
-                  {submissionRecords.map((row) => (
-                    <div className="mini-item" key={row.id}>
-                      <strong>{row.title}</strong>
-                      <span>{row.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </form>
-            </div>
-          </section>
-
-          <section className="panel panel-span-2">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Evidence</p>
-                <h3>真值证据检索</h3>
-              </div>
-              <span className="badge">{evidenceResults.length} 命中</span>
-            </div>
-            <form className="stack" onSubmit={handleSearchEvidence}>
-              <div className="three-column">
-                <label>
-                  关键词
-                  <input
-                    value={evidenceQuery}
-                    onChange={(event) => setEvidenceQuery(event.target.value)}
-                    placeholder="例如：工期、资格要求、质量目标"
-                  />
-                </label>
-                <label>
-                  文档范围
-                  <select
-                    value={evidenceDocumentType}
-                    onChange={(event) => setEvidenceDocumentType(event.target.value)}
-                  >
-                    <option value="">全部真值文档</option>
-                    <option value="tender">tender</option>
-                    <option value="norm">norm</option>
-                  </select>
-                </label>
-                <div className="align-end">
-                  <button
-                    className="primary-button"
-                    type="submit"
-                    disabled={!token || !selectedProjectId || !evidenceQuery.trim() || Boolean(busyLabel)}
-                  >
-                    检索 evidence
-                  </button>
-                </div>
-              </div>
-            </form>
-            <div className="two-column-layout">
-              <div className="scroll-box">
-                <strong>Search Results</strong>
-                {evidenceResults.map((row) => (
-                  <article className="result-card" key={row.id}>
-                    <header>
-                      <strong>{row.section_title}</strong>
-                      <span>
-                        {row.filename} · p.{row.page_start}
-                      </span>
-                    </header>
-                    <p>{row.content}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="scroll-box">
-                <strong>Selected Document Evidence Units</strong>
-                {documentEvidenceUnits.map((row) => (
-                  <article className="result-card" key={row.id}>
-                    <header>
-                      <strong>{row.section_title}</strong>
-                      <span>
-                        {row.unit_type} · {row.anchor}
-                      </span>
-                    </header>
-                    <p>{row.content}</p>
-                  </article>
-                ))}
               </div>
             </div>
-          </section>
+          </form>
+          <div className="workspace-grid workspace-grid-2">
+            <div className="scroll-box">
+              <strong>Search Results</strong>
+              {evidenceResults.map((row) => (
+                <article className="result-card" key={row.id}>
+                  <header>
+                    <strong>{row.section_title}</strong>
+                    <span>
+                      {row.filename} · p.{row.page_start}
+                    </span>
+                  </header>
+                  <p>{row.content}</p>
+                </article>
+              ))}
+            </div>
+            <div className="scroll-box">
+              <strong>Selected Document Evidence Units</strong>
+              {documentEvidenceUnits.map((row) => (
+                <article className="result-card" key={row.id}>
+                  <header>
+                    <strong>{row.section_title}</strong>
+                    <span>
+                      {row.unit_type} · {row.anchor}
+                    </span>
+                  </header>
+                  <p>{row.content}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      </section>
+    );
+  }
 
-          <section className="panel">
+  function renderHistoricalModule() {
+    return (
+      <section className="workspace-stack">
+        <div className="workspace-grid workspace-grid-3">
+          <section className="surface-card">
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Historical</p>
@@ -1281,17 +1181,11 @@ export default function Home() {
               <div className="two-column">
                 <label>
                   source_type
-                  <input
-                    value={historicalSourceType}
-                    onChange={(event) => setHistoricalSourceType(event.target.value)}
-                  />
+                  <input value={historicalSourceType} onChange={(event) => setHistoricalSourceType(event.target.value)} />
                 </label>
                 <label>
                   project_type
-                  <input
-                    value={historicalProjectType}
-                    onChange={(event) => setHistoricalProjectType(event.target.value)}
-                  />
+                  <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
                 </label>
               </div>
               <div className="two-column">
@@ -1312,10 +1206,11 @@ export default function Home() {
                 />
                 标记为推荐样本
               </label>
-              <button className="primary-button" type="submit" disabled={!token || !importDocumentId || Boolean(busyLabel)}>
+              <button className="primary-button" disabled={!token || !importDocumentId || Boolean(busyLabel)} type="submit">
                 导入历史标书
               </button>
             </form>
+
             <label>
               当前历史标书
               <select
@@ -1343,7 +1238,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="panel panel-span-2">
+          <section className="surface-card workspace-span-2">
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Reuse</p>
@@ -1355,23 +1250,20 @@ export default function Home() {
               <div className="three-column">
                 <label>
                   project_type
-                  <input
-                    value={historicalProjectType}
-                    onChange={(event) => setHistoricalProjectType(event.target.value)}
-                  />
+                  <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
                 </label>
                 <label>
                   section_type
                   <input value={reuseSectionType} onChange={(event) => setReuseSectionType(event.target.value)} />
                 </label>
                 <div className="align-end">
-                  <button className="primary-button" type="submit" disabled={!token || Boolean(busyLabel)}>
+                  <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
                     检索 reuse pack
                   </button>
                 </div>
               </div>
             </form>
-            <div className="three-column-layout">
+            <div className="workspace-grid workspace-grid-3">
               <div className="scroll-box">
                 <strong>safe_reuse</strong>
                 {reusePack?.safe_reuse.map((item) => (
@@ -1409,6 +1301,7 @@ export default function Home() {
                 ))}
               </div>
             </div>
+
             <form className="stack" onSubmit={handleVerifyLeakage}>
               <div className="two-column">
                 <label>
@@ -1434,13 +1327,9 @@ export default function Home() {
               </label>
               <label>
                 draft_text
-                <textarea
-                  rows={5}
-                  value={leakageDraftText}
-                  onChange={(event) => setLeakageDraftText(event.target.value)}
-                />
+                <textarea rows={5} value={leakageDraftText} onChange={(event) => setLeakageDraftText(event.target.value)} />
               </label>
-              <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
+              <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
                 校验历史污染
               </button>
               {leakageResult ? (
@@ -1450,7 +1339,8 @@ export default function Home() {
                 </div>
               ) : null}
             </form>
-            <div className="two-column-layout">
+
+            <div className="workspace-grid workspace-grid-2">
               <div className="scroll-box">
                 <strong>Sections</strong>
                 {historicalSections.map((section) => (
@@ -1481,343 +1371,315 @@ export default function Home() {
           </section>
         </div>
       </section>
+    );
+  }
 
-      <style jsx>{`
-        .console-shell {
-          display: grid;
-          grid-template-columns: 280px 1fr;
-          gap: 24px;
-          min-height: 100vh;
-          padding: 24px;
+  function renderDecompositionModule() {
+    return (
+      <section className="workspace-stack">
+        <div className="workspace-grid workspace-grid-2">
+          <section className="surface-card">
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">招标解析</p>
+                <h3>Decomposition</h3>
+              </div>
+              <span className="badge">{decompositionRuns.length}</span>
+            </div>
+            <form className="stack" onSubmit={handleCreateDecompositionRun}>
+              <label>
+                任务名
+                <input value={decompositionRunName} onChange={(event) => setDecompositionRunName(event.target.value)} />
+              </label>
+              <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
+                创建解析任务
+              </button>
+            </form>
+            <div className="mini-list">
+              {decompositionRuns.map((row) => (
+                <div className="mini-item" key={row.id}>
+                  <strong>{row.run_name}</strong>
+                  <span>{row.status}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="surface-card">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Risk & Context</p>
+                <h3>拆解工作台提示</h3>
+              </div>
+            </div>
+            <div className="stack">
+              <div className="info-block">
+                <strong>当前项目</strong>
+                <p>{selectedProject ? selectedProject.name : "未选择项目"}</p>
+              </div>
+              <div className="info-block">
+                <strong>当前文档</strong>
+                <p>{selectedDocument ? selectedDocument.filename : "建议先在文档上传模块选定招标文件"}</p>
+              </div>
+              <div className="info-block">
+                <strong>Copilot 可帮助</strong>
+                <p>解释拆解状态、跳转证据检索、提示下一步补齐动作。</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    );
+  }
+
+  function renderGenerationReviewModule() {
+    return (
+      <section className="workspace-stack">
+        <div className="workspace-grid workspace-grid-2">
+          <form className="surface-card stack" onSubmit={handleCreateGenerationJob}>
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">标书生成</p>
+                <h3>Generation</h3>
+              </div>
+              <span className="badge">{generationJobs.length}</span>
+            </div>
+            <label>
+              任务名
+              <input value={generationJobName} onChange={(event) => setGenerationJobName(event.target.value)} />
+            </label>
+            <label>
+              目标章节数
+              <input
+                min="0"
+                type="number"
+                value={generationTargetSections}
+                onChange={(event) => setGenerationTargetSections(event.target.value)}
+              />
+            </label>
+            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
+              创建生成任务
+            </button>
+            <div className="mini-list">
+              {generationJobs.map((row) => (
+                <div className="mini-item" key={row.id}>
+                  <strong>{row.job_name}</strong>
+                  <span>{row.status}</span>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <form className="surface-card stack" onSubmit={handleCreateReviewRun}>
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">标书检测</p>
+                <h3>Review</h3>
+              </div>
+              <span className="badge">{reviewRuns.length}</span>
+            </div>
+            <label>
+              任务名
+              <input value={reviewRunName} onChange={(event) => setReviewRunName(event.target.value)} />
+            </label>
+            <label>
+              模式
+              <select value={reviewMode} onChange={(event) => setReviewMode(event.target.value)}>
+                <option value="simulated_scoring">simulated_scoring</option>
+                <option value="compliance_review">compliance_review</option>
+              </select>
+            </label>
+            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
+              创建检测任务
+            </button>
+            <div className="mini-list">
+              {reviewRuns.map((row) => (
+                <div className="mini-item" key={row.id}>
+                  <strong>{row.run_name}</strong>
+                  <span>{row.review_mode}</span>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <form className="surface-card stack" onSubmit={handleCreateLayoutJob}>
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">排版定稿</p>
+                <h3>Layout</h3>
+              </div>
+              <span className="badge">{layoutJobs.length}</span>
+            </div>
+            <label>
+              任务名
+              <input value={layoutJobName} onChange={(event) => setLayoutJobName(event.target.value)} />
+            </label>
+            <label>
+              模板
+              <input value={layoutTemplateName} onChange={(event) => setLayoutTemplateName(event.target.value)} />
+            </label>
+            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
+              创建排版任务
+            </button>
+            <div className="mini-list">
+              {layoutJobs.map((row) => (
+                <div className="mini-item" key={row.id}>
+                  <strong>{row.job_name}</strong>
+                  <span>{row.template_name}</span>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <form className="surface-card stack" onSubmit={handleCreateSubmissionRecord}>
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">标书管理</p>
+                <h3>Submission</h3>
+              </div>
+              <span className="badge">{submissionRecords.length}</span>
+            </div>
+            <label>
+              标题
+              <input value={submissionTitle} onChange={(event) => setSubmissionTitle(event.target.value)} />
+            </label>
+            <label>
+              状态
+              <select value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value)}>
+                <option value="draft">draft</option>
+                <option value="ready_for_submission">ready_for_submission</option>
+                <option value="submitted">submitted</option>
+                <option value="archived">archived</option>
+              </select>
+            </label>
+            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
+              创建管理记录
+            </button>
+            <div className="mini-list">
+              {submissionRecords.map((row) => (
+                <div className="mini-item" key={row.id}>
+                  <strong>{row.title}</strong>
+                  <span>{row.status}</span>
+                </div>
+              ))}
+            </div>
+          </form>
+        </div>
+      </section>
+    );
+  }
+
+  function renderActiveModule() {
+    switch (activeModule) {
+      case "documents":
+        return renderDocumentsModule();
+      case "evidence":
+        return renderEvidenceModule();
+      case "historical":
+        return renderHistoricalModule();
+      case "decomposition":
+        return renderDecompositionModule();
+      case "generation-review":
+        return renderGenerationReviewModule();
+      case "overview":
+      default:
+        return renderOverviewModule();
+    }
+  }
+
+  return (
+    <main className="chat-shell">
+      <WorkspaceSidebar
+        activeModule={activeModule}
+        busyLabel={busyLabel}
+        collapsed={sidebarCollapsed}
+        message={message}
+        modules={WORKSPACE_MODULES}
+        onLogout={handleLogout}
+        onOpenCopilot={() => setCopilotOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onSelectModule={(moduleId) => setActiveModule(moduleId as WorkspaceModule)}
+        onSelectProject={(projectId) => setSelectedProjectId(projectId)}
+        onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        sessionReady={Boolean(token)}
+      />
+
+      <section className="chat-main">
+        <header className="workspace-header">
+          <div>
+            <p className="eyebrow">Workspace</p>
+            <h2>{activeModuleMeta.label}</h2>
+            <p className="workspace-subtitle">{activeModuleMeta.hint}</p>
+          </div>
+          <div className="workspace-toolbar">
+            <div className="context-pill">
+              <span className="brand-point brand-point-inline" />
+              <span>{selectedProject ? selectedProject.name : "未选择项目"}</span>
+            </div>
+            <button className="ghost-button" onClick={() => setSettingsOpen(true)} type="button">
+              设置
+            </button>
+            <button className="primary-button" onClick={() => setCopilotOpen(true)} type="button">
+              打开 Copilot
+            </button>
+          </div>
+        </header>
+
+        {token ? renderActiveModule() : renderLoginWorkspace()}
+      </section>
+
+      <SettingsDrawer
+        connectivityResult={connectivityResult}
+        disabled={!token || Boolean(busyLabel)}
+        onClose={() => setSettingsOpen(false)}
+        onFieldChange={(field, value) =>
+          setRuntimeForm((current) => ({
+            ...current,
+            [field]: value,
+          }))
         }
-
-        .console-sidebar {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-          padding: 28px;
-          border: 1px solid var(--line);
-          border-radius: 28px;
-          background: rgba(20, 29, 46, 0.94);
-          color: white;
-          box-shadow: var(--shadow);
+        onModelChange={(role, value) =>
+          setRuntimeForm((current) => ({
+            ...current,
+            defaultModels: {
+              ...current.defaultModels,
+              [role]: value,
+            },
+          }))
         }
-
-        .sidebar-copy,
-        .seed-box p,
-        .status-card p {
-          color: rgba(255, 255, 255, 0.72);
+        onSelectedRoleChange={(value) =>
+          setRuntimeForm((current) => ({
+            ...current,
+            selectedRole: value,
+          }))
         }
+        onSubmit={handleConnectivityCheck}
+        open={settingsOpen}
+        runtimeForm={runtimeForm}
+        runtimeSettings={runtimeSettings}
+      />
 
-        .status-card,
-        .seed-box {
-          display: flex;
-          gap: 12px;
-          padding: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          border-radius: 20px;
-          background: rgba(255, 255, 255, 0.06);
-        }
+      <CopilotPanel
+        draft={copilotDraft}
+        messages={copilotMessages}
+        moduleLabel={activeModuleMeta.label}
+        onClose={() => setCopilotOpen(false)}
+        onDraftChange={setCopilotDraft}
+        onQuickAction={handleCopilotQuickAction}
+        onSubmit={handleCopilotSubmit}
+        open={copilotOpen}
+        projectName={selectedProject?.name ?? null}
+        quickActions={copilotQuickActions}
+      />
 
-        .status-dot {
-          width: 12px;
-          height: 12px;
-          margin-top: 5px;
-          border-radius: 50%;
-          background: #53d58d;
-          box-shadow: 0 0 0 6px rgba(83, 213, 141, 0.18);
-        }
-
-        .console-main {
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-        }
-
-        .hero-panel,
-        .panel {
-          border: 1px solid var(--line);
-          border-radius: 28px;
-          padding: 24px;
-          background: var(--panel);
-          backdrop-filter: blur(14px);
-          box-shadow: var(--shadow);
-        }
-
-        .hero-panel {
-          display: flex;
-          justify-content: space-between;
-          gap: 24px;
-          background: linear-gradient(135deg, rgba(255, 252, 246, 0.95), rgba(236, 242, 255, 0.9));
-        }
-
-        .hero-panel p {
-          max-width: 680px;
-        }
-
-        .hero-stats {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(96px, 1fr));
-          gap: 12px;
-          min-width: 300px;
-        }
-
-        .hero-stats div {
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          padding: 16px;
-          border-radius: 20px;
-          background: rgba(255, 255, 255, 0.72);
-          border: 1px solid rgba(33, 96, 255, 0.08);
-        }
-
-        .hero-stats span,
-        .badge,
-        .eyebrow {
-          color: var(--muted);
-          font-size: 0.78rem;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-
-        .hero-stats strong {
-          font-size: 2rem;
-        }
-
-        .panel-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 20px;
-        }
-
-        .panel-span-2 {
-          grid-column: span 2;
-        }
-
-        .panel-header {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: start;
-          margin-bottom: 18px;
-        }
-
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 8px 12px;
-          border-radius: 999px;
-          background: var(--accent-soft);
-          color: var(--accent);
-        }
-
-        .badge-success {
-          background: rgba(27, 156, 103, 0.14);
-          color: var(--success);
-        }
-
-        .stack {
-          display: grid;
-          gap: 14px;
-        }
-
-        .inline-form,
-        .button-row,
-        .two-column,
-        .three-column,
-        .role-grid,
-        .two-column-layout,
-        .three-column-layout {
-          display: grid;
-          gap: 12px;
-        }
-
-        .inline-form {
-          grid-template-columns: 1fr auto;
-          margin-bottom: 12px;
-        }
-
-        .button-row {
-          grid-template-columns: repeat(3, 1fr);
-          margin: 12px 0;
-        }
-
-        .two-column {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .three-column {
-          grid-template-columns: 1.6fr 1fr auto;
-          align-items: end;
-        }
-
-        .two-column-layout {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          margin-top: 16px;
-        }
-
-        .three-column-layout {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          margin: 16px 0;
-        }
-
-        .role-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        label {
-          display: grid;
-          gap: 8px;
-          color: var(--muted);
-          font-size: 0.92rem;
-        }
-
-        input,
-        select,
-        textarea {
-          width: 100%;
-          border: 1px solid var(--line);
-          border-radius: 16px;
-          padding: 12px 14px;
-          background: var(--panel-strong);
-          color: var(--ink);
-        }
-
-        textarea {
-          resize: vertical;
-        }
-
-        .primary-button,
-        .ghost-button {
-          border-radius: 16px;
-          padding: 12px 16px;
-          border: 1px solid transparent;
-          transition: 160ms ease;
-        }
-
-        .primary-button {
-          background: linear-gradient(135deg, #2160ff, #55a4ff);
-          color: white;
-          box-shadow: 0 12px 24px rgba(33, 96, 255, 0.24);
-        }
-
-        .ghost-button {
-          background: transparent;
-          border-color: var(--line);
-          color: inherit;
-        }
-
-        .primary-button:disabled,
-        .ghost-button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .list {
-          display: grid;
-          gap: 10px;
-          margin-top: 12px;
-          max-height: 340px;
-          overflow: auto;
-        }
-
-        .list-item {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: center;
-          padding: 14px 16px;
-          border-radius: 18px;
-          border: 1px solid var(--line);
-          background: rgba(255, 255, 255, 0.72);
-          text-align: left;
-        }
-
-        .list-item p,
-        .result-card p,
-        .message-box p {
-          margin: 4px 0 0;
-          color: var(--muted);
-        }
-
-        .list-item-active {
-          border-color: rgba(33, 96, 255, 0.3);
-          background: rgba(33, 96, 255, 0.08);
-        }
-
-        .scroll-box {
-          max-height: 360px;
-          overflow: auto;
-          display: grid;
-          gap: 10px;
-          align-content: start;
-        }
-
-        .result-card {
-          border: 1px solid var(--line);
-          border-radius: 18px;
-          padding: 14px;
-          background: rgba(255, 255, 255, 0.72);
-        }
-
-        .result-card header {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .message-box {
-          padding: 14px 16px;
-          border-radius: 18px;
-          border: 1px solid transparent;
-        }
-
-        .message-success {
-          background: rgba(27, 156, 103, 0.1);
-          border-color: rgba(27, 156, 103, 0.2);
-        }
-
-        .message-warning {
-          background: rgba(190, 106, 0, 0.1);
-          border-color: rgba(190, 106, 0, 0.18);
-        }
-
-        .checkbox-row {
-          display: flex;
-          gap: 10px;
-          align-items: center;
-        }
-
-        .checkbox-row input {
-          width: auto;
-        }
-
-        .align-end {
-          display: flex;
-          align-items: end;
-        }
-
-        @media (max-width: 1280px) {
-          .console-shell {
-            grid-template-columns: 1fr;
-          }
-
-          .panel-grid,
-          .two-column-layout,
-          .three-column-layout,
-          .three-column,
-          .role-grid,
-          .hero-panel {
-            grid-template-columns: 1fr;
-          }
-
-          .panel-span-2 {
-            grid-column: span 1;
-          }
-        }
-      `}</style>
+      {!copilotOpen ? (
+        <button className="copilot-fab" onClick={() => setCopilotOpen(true)} type="button">
+          <span className="brand-point brand-point-inline" />
+          Copilot
+        </button>
+      ) : null}
     </main>
   );
 }

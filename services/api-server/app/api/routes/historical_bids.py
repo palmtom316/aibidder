@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user, require_roles
+from app.api.deps.pagination import PaginationParams, pagination_params
 from app.db.models import (
     Document,
     HistoricalBidDocument,
@@ -17,14 +18,15 @@ from app.schemas.auth import UserIdentity
 from app.schemas.historical_bid import (
     HistoricalBidImportRequest,
     HistoricalBidResponse,
+    HistoricalBidSectionResponse,
     HistoricalReusePackResponse,
     HistoricalReuseUnitResponse,
-    HistoricalBidSectionResponse,
 )
+from app.services.audit import record_audit_event
 from app.services.historical_bid_ingestion import rebuild_historical_bid_sections
 from app.services.historical_search import search_reuse_units
-from app.services.reuse_unit_builder import rebuild_reuse_units
 from app.services.reuse_pack_builder import build_reuse_pack
+from app.services.reuse_unit_builder import rebuild_reuse_units
 
 router = APIRouter(prefix="/api/v1/historical-bids", tags=["historical-bids"])
 
@@ -48,6 +50,7 @@ def _get_accessible_document(document_id: int, current_user: UserIdentity, db: S
 @router.post("/import", response_model=HistoricalBidResponse, status_code=status.HTTP_201_CREATED)
 def import_historical_bid(
     payload: HistoricalBidImportRequest,
+    request: Request,
     current_user: UserIdentity = Depends(require_roles(UserRole.ADMIN, UserRole.PROJECT_MANAGER)),
     db: Session = Depends(get_db),
 ) -> HistoricalBidDocument:
@@ -69,6 +72,18 @@ def import_historical_bid(
         is_recommended=payload.is_recommended,
     )
     db.add(historical_bid)
+    db.flush()
+    record_audit_event(
+        db,
+        action="historical_bid.imported",
+        resource_type="historical_bid",
+        resource_id=str(historical_bid.id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        document_id=payload.document_id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"project_type": payload.project_type, "region": payload.region, "year": payload.year},
+    )
     db.commit()
     db.refresh(historical_bid)
     return historical_bid
@@ -76,6 +91,7 @@ def import_historical_bid(
 
 @router.get("", response_model=list[HistoricalBidResponse])
 def list_historical_bids(
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[HistoricalBidDocument]:
@@ -83,6 +99,8 @@ def list_historical_bids(
         select(HistoricalBidDocument)
         .where(HistoricalBidDocument.organization_id == current_user.organization_id)
         .order_by(HistoricalBidDocument.id.asc())
+        .limit(pagination.limit)
+        .offset(pagination.offset)
     )
     return list(db.scalars(stmt))
 
@@ -102,16 +120,31 @@ def _get_historical_bid(historical_bid_id: int, current_user: UserIdentity, db: 
 @router.post("/{historical_bid_id}/rebuild-sections", response_model=list[HistoricalBidSectionResponse])
 def rebuild_sections(
     historical_bid_id: int,
+    request: Request,
     current_user: UserIdentity = Depends(require_roles(UserRole.ADMIN, UserRole.PROJECT_MANAGER)),
     db: Session = Depends(get_db),
 ) -> list[HistoricalBidSection]:
     historical_bid = _get_historical_bid(historical_bid_id, current_user, db)
-    return rebuild_historical_bid_sections(db, historical_bid)
+    sections = rebuild_historical_bid_sections(db, historical_bid)
+    record_audit_event(
+        db,
+        action="historical_bid.sections.rebuilt",
+        resource_type="historical_bid",
+        resource_id=str(historical_bid_id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        document_id=historical_bid.document_id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"section_count": len(sections)},
+    )
+    db.commit()
+    return sections
 
 
 @router.get("/{historical_bid_id}/sections", response_model=list[HistoricalBidSectionResponse])
 def list_sections(
     historical_bid_id: int,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[HistoricalBidSection]:
@@ -120,6 +153,8 @@ def list_sections(
         select(HistoricalBidSection)
         .where(HistoricalBidSection.historical_bid_document_id == historical_bid_id)
         .order_by(HistoricalBidSection.id.asc())
+        .limit(pagination.limit)
+        .offset(pagination.offset)
     )
     return list(db.scalars(stmt))
 
@@ -127,16 +162,31 @@ def list_sections(
 @router.post("/{historical_bid_id}/rebuild-reuse-units", response_model=list[HistoricalReuseUnitResponse])
 def rebuild_historical_reuse_units(
     historical_bid_id: int,
+    request: Request,
     current_user: UserIdentity = Depends(require_roles(UserRole.ADMIN, UserRole.PROJECT_MANAGER)),
     db: Session = Depends(get_db),
 ) -> list[HistoricalReuseUnit]:
     historical_bid = _get_historical_bid(historical_bid_id, current_user, db)
-    return rebuild_reuse_units(db, historical_bid)
+    reuse_units = rebuild_reuse_units(db, historical_bid)
+    record_audit_event(
+        db,
+        action="historical_bid.reuse_units.rebuilt",
+        resource_type="historical_bid",
+        resource_id=str(historical_bid_id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        document_id=historical_bid.document_id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"reuse_unit_count": len(reuse_units)},
+    )
+    db.commit()
+    return reuse_units
 
 
 @router.get("/{historical_bid_id}/reuse-units", response_model=list[HistoricalReuseUnitResponse])
 def list_reuse_units(
     historical_bid_id: int,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[HistoricalReuseUnit]:
@@ -146,6 +196,8 @@ def list_reuse_units(
         .join(HistoricalBidSection, HistoricalBidSection.id == HistoricalReuseUnit.historical_bid_section_id)
         .where(HistoricalBidSection.historical_bid_document_id == historical_bid_id)
         .order_by(HistoricalReuseUnit.id.asc())
+        .limit(pagination.limit)
+        .offset(pagination.offset)
     )
     return list(db.scalars(stmt))
 
@@ -154,6 +206,7 @@ def list_reuse_units(
 def search_historical_reuse_units(
     project_type: str,
     section_type: str,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -162,6 +215,8 @@ def search_historical_reuse_units(
         organization_id=current_user.organization_id,
         project_type=project_type,
         section_type=section_type,
+        limit=pagination.limit,
+        offset=pagination.offset,
     )
     pack = build_reuse_pack(reuse_units)
     return {

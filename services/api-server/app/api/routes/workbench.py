@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
+from app.api.pagination import slice_results
 from app.db.models import (
     DecompositionRun,
     Document,
@@ -34,6 +35,7 @@ from app.schemas.workbench import (
     SubmissionRecordResponse,
     WorkbenchOverviewResponse,
 )
+from app.services.audit_log import write_audit_log
 
 router = APIRouter(prefix="/api/v1/workbench", tags=["workbench"])
 
@@ -154,6 +156,7 @@ def get_workbench_overview(
 @router.post("/library/entries", response_model=KnowledgeBaseEntryResponse, status_code=status.HTTP_201_CREATED)
 def create_library_entry(
     payload: KnowledgeBaseEntryCreate,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> KnowledgeBaseEntry:
@@ -174,6 +177,18 @@ def create_library_entry(
         created_by_user_id=current_user.id,
     )
     db.add(entry)
+    db.flush()
+    write_audit_log(
+        db,
+        action="workbench.library.create",
+        organization_id=current_user.organization_id,
+        project_id=payload.project_id,
+        user_id=current_user.id,
+        resource_type="knowledge_base_entry",
+        resource_id=entry.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"category": payload.category, "title": payload.title},
+    )
     db.commit()
     db.refresh(entry)
     return entry
@@ -182,6 +197,8 @@ def create_library_entry(
 @router.get("/library/entries", response_model=list[KnowledgeBaseEntryResponse])
 def list_library_entries(
     project_id: int | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[KnowledgeBaseEntry]:
@@ -192,12 +209,13 @@ def list_library_entries(
     if project_id is not None:
         stmt = stmt.where(KnowledgeBaseEntry.project_id == project_id)
     stmt = stmt.order_by(KnowledgeBaseEntry.id.desc())
-    return list(db.scalars(stmt))
+    return slice_results(list(db.scalars(stmt)), offset=offset, limit=limit)
 
 
 @router.post("/library/entries/{entry_id}/run-check", response_model=KnowledgeBaseEntryResponse)
 def run_library_entry_check(
     entry_id: int,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> KnowledgeBaseEntry:
@@ -214,6 +232,17 @@ def run_library_entry_check(
     entry.detected_summary = (
         f"Checked {entry.category}: anchors, source metadata, and reuse readiness passed local baseline."
     )
+    write_audit_log(
+        db,
+        action="workbench.library.run_check",
+        organization_id=current_user.organization_id,
+        project_id=entry.project_id,
+        user_id=current_user.id,
+        resource_type="knowledge_base_entry",
+        resource_id=entry.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"detection_status": entry.detection_status},
+    )
     db.commit()
     db.refresh(entry)
     return entry
@@ -223,6 +252,9 @@ def _create_run_record(
     *,
     db: Session,
     current_user: UserIdentity,
+    request: Request,
+    action: str,
+    resource_type: str,
     model,
     values: dict,
 ):
@@ -232,6 +264,18 @@ def _create_run_record(
         **values,
     )
     db.add(record)
+    db.flush()
+    write_audit_log(
+        db,
+        action=action,
+        organization_id=current_user.organization_id,
+        project_id=values.get("project_id"),
+        user_id=current_user.id,
+        resource_type=resource_type,
+        resource_id=record.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail=values,
+    )
     db.commit()
     db.refresh(record)
     return record
@@ -240,6 +284,7 @@ def _create_run_record(
 @router.post("/decomposition/runs", response_model=DecompositionRunResponse, status_code=status.HTTP_201_CREATED)
 def create_decomposition_run(
     payload: PipelineRunCreate,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DecompositionRun:
@@ -252,6 +297,9 @@ def create_decomposition_run(
     return _create_run_record(
         db=db,
         current_user=current_user,
+        request=request,
+        action="workbench.decomposition.create",
+        resource_type="decomposition_run",
         model=DecompositionRun,
         values={
             "project_id": payload.project_id,
@@ -267,6 +315,8 @@ def create_decomposition_run(
 @router.get("/decomposition/runs", response_model=list[DecompositionRunResponse])
 def list_decomposition_runs(
     project_id: int | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Sequence[DecompositionRun]:
@@ -275,12 +325,13 @@ def list_decomposition_runs(
     stmt = select(DecompositionRun).where(DecompositionRun.organization_id == current_user.organization_id)
     if project_id is not None:
         stmt = stmt.where(DecompositionRun.project_id == project_id)
-    return list(db.scalars(stmt.order_by(DecompositionRun.id.desc())))
+    return slice_results(list(db.scalars(stmt.order_by(DecompositionRun.id.desc()))), offset=offset, limit=limit)
 
 
 @router.post("/generation/jobs", response_model=GenerationJobResponse, status_code=status.HTTP_201_CREATED)
 def create_generation_job(
     payload: GenerationJobCreate,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> GenerationJob:
@@ -293,6 +344,9 @@ def create_generation_job(
     return _create_run_record(
         db=db,
         current_user=current_user,
+        request=request,
+        action="workbench.generation.create",
+        resource_type="generation_job",
         model=GenerationJob,
         values={
             "project_id": payload.project_id,
@@ -307,6 +361,8 @@ def create_generation_job(
 @router.get("/generation/jobs", response_model=list[GenerationJobResponse])
 def list_generation_jobs(
     project_id: int | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Sequence[GenerationJob]:
@@ -315,12 +371,13 @@ def list_generation_jobs(
     stmt = select(GenerationJob).where(GenerationJob.organization_id == current_user.organization_id)
     if project_id is not None:
         stmt = stmt.where(GenerationJob.project_id == project_id)
-    return list(db.scalars(stmt.order_by(GenerationJob.id.desc())))
+    return slice_results(list(db.scalars(stmt.order_by(GenerationJob.id.desc()))), offset=offset, limit=limit)
 
 
 @router.post("/review/runs", response_model=ReviewRunResponse, status_code=status.HTTP_201_CREATED)
 def create_review_run(
     payload: ReviewRunCreate,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ReviewRun:
@@ -333,6 +390,9 @@ def create_review_run(
     return _create_run_record(
         db=db,
         current_user=current_user,
+        request=request,
+        action="workbench.review.create",
+        resource_type="review_run",
         model=ReviewRun,
         values={
             "project_id": payload.project_id,
@@ -348,6 +408,8 @@ def create_review_run(
 @router.get("/review/runs", response_model=list[ReviewRunResponse])
 def list_review_runs(
     project_id: int | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Sequence[ReviewRun]:
@@ -356,12 +418,13 @@ def list_review_runs(
     stmt = select(ReviewRun).where(ReviewRun.organization_id == current_user.organization_id)
     if project_id is not None:
         stmt = stmt.where(ReviewRun.project_id == project_id)
-    return list(db.scalars(stmt.order_by(ReviewRun.id.desc())))
+    return slice_results(list(db.scalars(stmt.order_by(ReviewRun.id.desc()))), offset=offset, limit=limit)
 
 
 @router.post("/layout/jobs", response_model=LayoutJobResponse, status_code=status.HTTP_201_CREATED)
 def create_layout_job(
     payload: LayoutJobCreate,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> LayoutJob:
@@ -374,6 +437,9 @@ def create_layout_job(
     return _create_run_record(
         db=db,
         current_user=current_user,
+        request=request,
+        action="workbench.layout.create",
+        resource_type="layout_job",
         model=LayoutJob,
         values={
             "project_id": payload.project_id,
@@ -388,6 +454,8 @@ def create_layout_job(
 @router.get("/layout/jobs", response_model=list[LayoutJobResponse])
 def list_layout_jobs(
     project_id: int | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Sequence[LayoutJob]:
@@ -396,7 +464,7 @@ def list_layout_jobs(
     stmt = select(LayoutJob).where(LayoutJob.organization_id == current_user.organization_id)
     if project_id is not None:
         stmt = stmt.where(LayoutJob.project_id == project_id)
-    return list(db.scalars(stmt.order_by(LayoutJob.id.desc())))
+    return slice_results(list(db.scalars(stmt.order_by(LayoutJob.id.desc()))), offset=offset, limit=limit)
 
 
 @router.post(
@@ -406,6 +474,7 @@ def list_layout_jobs(
 )
 def create_submission_record(
     payload: SubmissionRecordCreate,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SubmissionRecord:
@@ -418,6 +487,9 @@ def create_submission_record(
     return _create_run_record(
         db=db,
         current_user=current_user,
+        request=request,
+        action="workbench.submission.create",
+        resource_type="submission_record",
         model=SubmissionRecord,
         values={
             "project_id": payload.project_id,
@@ -431,6 +503,8 @@ def create_submission_record(
 @router.get("/submission-records", response_model=list[SubmissionRecordResponse])
 def list_submission_records(
     project_id: int | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Sequence[SubmissionRecord]:
@@ -439,4 +513,4 @@ def list_submission_records(
     stmt = select(SubmissionRecord).where(SubmissionRecord.organization_id == current_user.organization_id)
     if project_id is not None:
         stmt = stmt.where(SubmissionRecord.project_id == project_id)
-    return list(db.scalars(stmt.order_by(SubmissionRecord.id.desc())))
+    return slice_results(list(db.scalars(stmt.order_by(SubmissionRecord.id.desc()))), offset=offset, limit=limit)

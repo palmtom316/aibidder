@@ -6,7 +6,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db.models import DocumentArtifact, DocumentVersion, EvidenceUnit
+from app.db.models import AuditLog, DocumentArtifact, DocumentVersion, EvidenceUnit
 from app.db.session import SessionLocal
 from app.main import app
 
@@ -76,6 +76,66 @@ def test_create_and_list_project() -> None:
     )
     assert listed.status_code == 200
     assert any(item["name"] == "Phase A Project" for item in listed.json())
+
+
+def test_project_and_document_lists_support_limit_offset_pagination() -> None:
+    client = TestClient(app)
+    token = _login(client, "project_manager@example.com", "manager123456")
+
+    baseline_projects = client.get(
+        "/api/v1/projects",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert baseline_projects.status_code == 200
+    baseline_project_count = len(baseline_projects.json())
+
+    created_project_ids: list[int] = []
+    for name in ["Paged Project A", "Paged Project B", "Paged Project C"]:
+        created = client.post(
+            "/api/v1/projects",
+            json={"name": name},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert created.status_code == 201
+        created_project_ids.append(created.json()["id"])
+
+    listed_projects = client.get(
+        "/api/v1/projects",
+        params={"limit": 2, "offset": baseline_project_count + 1},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert listed_projects.status_code == 200
+    projects_payload = listed_projects.json()
+    assert len(projects_payload) == 2
+    assert projects_payload[0]["id"] == created_project_ids[1]
+    assert projects_payload[1]["id"] == created_project_ids[2]
+
+    project_id = created_project_ids[0]
+    baseline_documents = client.get(
+        f"/api/v1/projects/{project_id}/documents",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert baseline_documents.status_code == 200
+    baseline_document_count = len(baseline_documents.json())
+
+    for index in range(3):
+        created = client.post(
+            f"/api/v1/projects/{project_id}/documents",
+            json={"filename": f"paged-{index}.pdf", "document_type": "tender"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert created.status_code == 201
+
+    listed_documents = client.get(
+        f"/api/v1/projects/{project_id}/documents",
+        params={"limit": 2, "offset": baseline_document_count + 1},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert listed_documents.status_code == 200
+    documents_payload = listed_documents.json()
+    assert len(documents_payload) == 2
+    assert documents_payload[0]["filename"] == "paged-1.pdf"
+    assert documents_payload[1]["filename"] == "paged-0.pdf"
 
 
 def test_create_and_list_documents() -> None:
@@ -149,6 +209,43 @@ def test_upload_document_creates_version_and_artifact() -> None:
     parse_log = json.loads(Path(parse_log_artifact.storage_path).read_text())
     assert parse_log["parser"] == "pdf_fallback"
     assert parse_log["transitions"] == ["uploaded", "parsing", "parsed"]
+
+
+def test_audit_logs_capture_login_project_creation_and_document_upload() -> None:
+    client = TestClient(app)
+    login_response = client.post(
+        "/api/v1/auth/login",
+        data={"username": "project_manager@example.com", "password": "manager123456"},
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+
+    project_response = client.post(
+        "/api/v1/projects",
+        json={"name": "Audit Trail Project"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert project_response.status_code == 201
+    project_id = project_response.json()["id"]
+
+    uploaded = client.post(
+        f"/api/v1/projects/{project_id}/documents/upload",
+        data={"document_type": "tender"},
+        files={"file": ("audit.pdf", b"%PDF-1.4 audit", "application/pdf")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert uploaded.status_code == 201
+
+    with SessionLocal() as db:
+        actions = list(
+            db.scalars(
+                select(AuditLog.action).order_by(AuditLog.id.asc())
+            )
+        )
+
+    assert "auth.login.succeeded" in actions
+    assert "project.create" in actions
+    assert "document.upload.completed" in actions
 
 
 def test_upload_rejects_unsupported_file_extension() -> None:

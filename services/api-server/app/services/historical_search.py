@@ -9,6 +9,9 @@ def search_reuse_units(
     organization_id: int,
     project_type: str,
     section_type: str,
+    *,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[HistoricalReuseUnit]:
     stmt = (
         select(HistoricalReuseUnit)
@@ -20,5 +23,7 @@ def search_reuse_units(
             HistoricalBidSection.section_type == section_type,
         )
         .order_by(HistoricalReuseUnit.fact_density_score.asc(), HistoricalReuseUnit.id.asc())
+        .limit(limit)
+        .offset(offset)
     )
     return list(db.scalars(stmt))

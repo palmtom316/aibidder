@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user, require_roles
+from app.api.deps.pagination import PaginationParams, pagination_params
+from app.api.pagination import paginate_scalars
 from app.core.document_ingestion import ingest_document
 from app.core.storage import save_upload, validate_upload
 from app.db.models import (
@@ -34,6 +36,7 @@ from app.schemas.writing_runtime import (
     HistoricalLeakageVerificationRequest,
     HistoricalLeakageVerificationResponse,
 )
+from app.services.audit import record_audit_event
 from app.services.evidence_search import search_evidence_units
 from app.services.evidence_unit_builder import (
     list_evidence_units_for_document,
@@ -84,6 +87,7 @@ def _get_project_for_member(project_id: int, current_user: UserIdentity, db: Ses
 )
 def create_project(
     payload: ProjectCreate,
+    request: Request,
     current_user: UserIdentity = Depends(require_roles(UserRole.ADMIN, UserRole.PROJECT_MANAGER)),
     db: Session = Depends(get_db),
 ) -> Project:
@@ -102,6 +106,28 @@ def create_project(
             role=current_user.role,
         )
     )
+    record_audit_event(
+        db,
+        action="project.create",
+        resource_type="project",
+        resource_id=str(project.id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        project_id=project.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"name": payload.name},
+    )
+    record_audit_event(
+        db,
+        action="project.created",
+        resource_type="project",
+        resource_id=str(project.id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        project_id=project.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"name": payload.name},
+    )
 
     db.commit()
     db.refresh(project)
@@ -110,6 +136,8 @@ def create_project(
 
 @router.get("", response_model=list[ProjectResponse])
 def list_projects(
+    response: Response,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[Project]:
@@ -122,12 +150,13 @@ def list_projects(
         )
         .order_by(Project.id.asc())
     )
-    return list(db.scalars(stmt))
+    return paginate_scalars(db=db, stmt=stmt, response=response, offset=pagination.offset, limit=pagination.limit)
 
 
 @router.get("/{project_id}/members", response_model=list[ProjectMemberResponse])
 def list_project_members(
     project_id: int,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ProjectMemberResponse]:
@@ -138,6 +167,8 @@ def list_project_members(
         .join(User, User.id == ProjectMember.user_id)
         .where(ProjectMember.project_id == project_id)
         .order_by(ProjectMember.id.asc())
+        .limit(pagination.limit)
+        .offset(pagination.offset)
     ).all()
     return [_serialize_project_member(member, user_email) for member, user_email in rows]
 
@@ -150,6 +181,7 @@ def list_project_members(
 def add_project_member(
     project_id: int,
     payload: ProjectMemberCreate,
+    request: Request,
     current_user: UserIdentity = Depends(require_roles(UserRole.ADMIN, UserRole.PROJECT_MANAGER)),
     db: Session = Depends(get_db),
 ) -> ProjectMemberResponse:
@@ -180,6 +212,17 @@ def add_project_member(
         role=payload.role,
     )
     db.add(project_member)
+    record_audit_event(
+        db,
+        action="project.member.added",
+        resource_type="project_member",
+        resource_id=str(target_user.id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        project_id=project_id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"role": payload.role.value, "user_email": target_user.email},
+    )
     db.commit()
     db.refresh(project_member)
     return _serialize_project_member(project_member, target_user.email)
@@ -193,6 +236,7 @@ def add_project_member(
 def create_document(
     project_id: int,
     payload: DocumentCreate,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Document:
@@ -202,6 +246,8 @@ def create_document(
         project_id=project_id,
         filename=payload.filename,
         document_type=payload.document_type,
+        mime_type="application/octet-stream",
+        file_size=0,
         created_by_user_id=current_user.id,
     )
     db.add(document)
@@ -213,6 +259,18 @@ def create_document(
             version_no=1,
             status="uploaded",
         )
+    )
+    record_audit_event(
+        db,
+        action="document.created",
+        resource_type="document",
+        resource_id=str(document.id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        project_id=project_id,
+        document_id=document.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"filename": payload.filename, "document_type": payload.document_type},
     )
 
     db.commit()
@@ -235,12 +293,19 @@ def _get_project_document(project_id: int, document_id: int, db: Session) -> Doc
 @router.get("/{project_id}/documents", response_model=list[DocumentResponse])
 def list_documents(
     project_id: int,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[Document]:
     _get_project_for_member(project_id, current_user, db)
 
-    stmt = select(Document).where(Document.project_id == project_id).order_by(Document.id.asc())
+    stmt = (
+        select(Document)
+        .where(Document.project_id == project_id)
+        .order_by(Document.id.desc())
+        .limit(pagination.limit)
+        .offset(pagination.offset)
+    )
     return list(db.scalars(stmt))
 
 
@@ -251,13 +316,28 @@ def list_documents(
 def rebuild_document_evidence_units(
     project_id: int,
     document_id: int,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[EvidenceUnit]:
     _get_project_for_member(project_id, current_user, db)
     document = _get_project_document(project_id, document_id, db)
     try:
-        return rebuild_evidence_units_for_document(db, document)
+        units = rebuild_evidence_units_for_document(db, document)
+        record_audit_event(
+            db,
+            action="document.evidence.rebuilt",
+            resource_type="document",
+            resource_id=str(document.id),
+            organization_id=current_user.organization_id,
+            user_id=current_user.id,
+            project_id=project_id,
+            document_id=document.id,
+            request_id=getattr(request.state, "request_id", ""),
+            detail={"unit_count": len(units)},
+        )
+        db.commit()
+        return units
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -269,12 +349,13 @@ def rebuild_document_evidence_units(
 def list_document_evidence_units(
     project_id: int,
     document_id: int,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[EvidenceUnit]:
     _get_project_for_member(project_id, current_user, db)
     _get_project_document(project_id, document_id, db)
-    return list_evidence_units_for_document(db, document_id)
+    return list_evidence_units_for_document(db, document_id)[pagination.offset : pagination.offset + pagination.limit]
 
 
 @router.get(
@@ -285,11 +366,19 @@ def search_project_evidence(
     project_id: int,
     q: str,
     document_type: str | None = None,
+    pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[EvidenceSearchResult]:
     _get_project_for_member(project_id, current_user, db)
-    rows = search_evidence_units(db, project_id=project_id, q=q, document_type=document_type)
+    rows = search_evidence_units(
+        db,
+        project_id=project_id,
+        q=q,
+        document_type=document_type,
+        limit=pagination.limit,
+        offset=pagination.offset,
+    )
     return [
         EvidenceSearchResult(
             id=evidence_unit.id,
@@ -314,6 +403,7 @@ def search_project_evidence(
 )
 def upload_document(
     project_id: int,
+    request: Request,
     document_type: str = Form(...),
     file: UploadFile = File(...),
     current_user: UserIdentity = Depends(get_current_user),
@@ -332,6 +422,8 @@ def upload_document(
         project_id=project_id,
         filename=file.filename or "upload",
         document_type=document_type,
+        mime_type=file.content_type or "application/octet-stream",
+        file_size=0,
         created_by_user_id=current_user.id,
     )
     db.add(document)
@@ -374,6 +466,23 @@ def upload_document(
         db.flush()
         rebuild_evidence_units_for_document(db, document)
 
+    record_audit_event(
+        db,
+        action="document.upload.completed",
+        resource_type="document",
+        resource_id=str(document.id),
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        project_id=project_id,
+        document_id=document.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={
+            "filename": file.filename or "upload",
+            "document_type": document_type,
+            "status": ingestion_result.status,
+        },
+    )
+
     db.commit()
     db.refresh(document)
     return document
@@ -409,6 +518,7 @@ def verify_section_historical_leakage(
     project_id: int,
     section_id: str,
     payload: HistoricalLeakageVerificationRequest,
+    request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HistoricalLeakageVerificationResponse:
@@ -421,7 +531,20 @@ def verify_section_historical_leakage(
             db=db,
         )
     )
-    return verify_historical_leakage(
+    result = verify_historical_leakage(
         draft_text=payload.draft_text,
         forbidden_legacy_terms=sorted(legacy_terms),
     )
+    record_audit_event(
+        db,
+        action="historical.leakage.verified",
+        resource_type="section",
+        resource_id=section_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        project_id=project_id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"matched_terms": result.matched_terms, "ok": result.ok},
+    )
+    db.commit()
+    return result

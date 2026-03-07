@@ -2,11 +2,11 @@ from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.security import ACCESS_TOKEN_KIND, REFRESH_TOKEN_KIND, decode_token
 from app.db.models import User, UserRole
 from app.db.session import get_db
 from app.schemas.auth import UserIdentity
@@ -22,10 +22,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
 
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = decode_token(token, expected_kind=ACCESS_TOKEN_KIND)
         subject = payload.get("sub")
-        if not subject:
-            raise credentials_error
     except JWTError as exc:
         raise credentials_error from exc
 
@@ -43,3 +41,11 @@ def require_roles(*allowed_roles: UserRole) -> Callable[[UserIdentity], UserIden
         return current_user
 
     return dependency
+
+
+def decode_refresh_token_subject(token: str) -> str:
+    payload = decode_token(token, expected_kind=REFRESH_TOKEN_KIND)
+    subject = payload.get("sub")
+    if not subject:
+        raise JWTError("Missing refresh token subject")
+    return subject

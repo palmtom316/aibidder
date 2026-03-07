@@ -17,6 +17,7 @@ storage/
 node_modules/
 .next/
 dist/
+.playwright-cli/
 
 # Env
 .env
@@ -25,3 +26,6 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Local agent/tooling state
+.omx/
