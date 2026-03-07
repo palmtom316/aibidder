@@ -11,6 +11,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.historical_bids import router as historical_bids_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.runtime_settings import router as runtime_settings_router
+from app.api.routes.workbench import router as workbench_router
 from app.core.config import settings
 from app.db.bootstrap import initialize_database
 
@@ -38,6 +39,7 @@ app.include_router(health_router)
 app.include_router(historical_bids_router)
 app.include_router(projects_router)
 app.include_router(runtime_settings_router)
+app.include_router(workbench_router)
 
 
 @app.middleware("http")

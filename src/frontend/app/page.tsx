@@ -4,26 +4,45 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
   ApiError,
+  createDecompositionRun,
+  createGenerationJob,
+  createKnowledgeBaseEntry,
+  createLayoutJob,
   createProject,
+  createReviewRun,
+  createSubmissionRecord,
+  DecompositionRun,
   DocumentRecord,
+  GenerationJob,
   getRuntimeSettings,
   HistoricalBid,
   HistoricalBidSection,
   HistoricalReusePack,
   HistoricalReuseUnit,
+  KnowledgeBaseEntry,
+  LayoutJob,
+  listDecompositionRuns,
   listDocuments,
   listEvidenceUnits,
+  listGenerationJobs,
   listHistoricalBids,
   listHistoricalReuseUnits,
   listHistoricalSections,
+  listKnowledgeBaseEntries,
+  listLayoutJobs,
   listProjects,
+  listReviewRuns,
+  listSubmissionRecords,
   login,
   Project,
+  ReviewRun,
   runConnectivityCheck,
+  runKnowledgeBaseCheck,
   RuntimeConnectivityResult,
   RuntimeSettings,
   searchEvidence,
   searchHistoricalReuse,
+  SubmissionRecord,
   uploadDocument,
   verifyHistoricalLeakage,
   importHistoricalBid,
@@ -31,6 +50,8 @@ import {
   rebuildHistoricalReuseUnits,
   EvidenceSearchResult,
   EvidenceUnit,
+  getWorkbenchOverview,
+  WorkbenchOverview,
 } from "../lib/api";
 import { clearStoredToken, getStoredToken, setStoredToken } from "../lib/session";
 
@@ -89,6 +110,25 @@ export default function Home() {
   const [evidenceResults, setEvidenceResults] = useState<EvidenceSearchResult[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [documentEvidenceUnits, setDocumentEvidenceUnits] = useState<EvidenceUnit[]>([]);
+  const [workbenchOverview, setWorkbenchOverview] = useState<WorkbenchOverview | null>(null);
+  const [knowledgeBaseEntries, setKnowledgeBaseEntries] = useState<KnowledgeBaseEntry[]>([]);
+  const [decompositionRuns, setDecompositionRuns] = useState<DecompositionRun[]>([]);
+  const [generationJobs, setGenerationJobs] = useState<GenerationJob[]>([]);
+  const [reviewRuns, setReviewRuns] = useState<ReviewRun[]>([]);
+  const [layoutJobs, setLayoutJobs] = useState<LayoutJob[]>([]);
+  const [submissionRecords, setSubmissionRecords] = useState<SubmissionRecord[]>([]);
+  const [libraryCategory, setLibraryCategory] = useState("excellent_bid");
+  const [libraryTitle, setLibraryTitle] = useState("2026 输变电优秀标书");
+  const [libraryOwnerName, setLibraryOwnerName] = useState("市场经营中心");
+  const [decompositionRunName, setDecompositionRunName] = useState("招标文件七类拆解");
+  const [generationJobName, setGenerationJobName] = useState("技术标初稿生成");
+  const [generationTargetSections, setGenerationTargetSections] = useState("7");
+  const [reviewRunName, setReviewRunName] = useState("模拟打分与合规复核");
+  const [reviewMode, setReviewMode] = useState("simulated_scoring");
+  const [layoutJobName, setLayoutJobName] = useState("企业模板排版");
+  const [layoutTemplateName, setLayoutTemplateName] = useState("corporate-default");
+  const [submissionTitle, setSubmissionTitle] = useState("投标文件回灌记录");
+  const [submissionStatus, setSubmissionStatus] = useState("draft");
 
   const [historicalBids, setHistoricalBids] = useState<HistoricalBid[]>([]);
   const [selectedHistoricalBidId, setSelectedHistoricalBidId] = useState<number | null>(null);
@@ -111,6 +151,11 @@ export default function Home() {
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
+  );
+
+  const selectedDocument = useMemo(
+    () => documents.find((document) => document.id === selectedDocumentId) ?? null,
+    [documents, selectedDocumentId],
   );
 
   const selectedHistoricalBid = useMemo(
@@ -138,6 +183,20 @@ export default function Home() {
       return;
     }
     void refreshDocuments(token, selectedProjectId);
+  }, [token, selectedProjectId]);
+
+  useEffect(() => {
+    if (!token) {
+      setWorkbenchOverview(null);
+      setKnowledgeBaseEntries([]);
+      setDecompositionRuns([]);
+      setGenerationJobs([]);
+      setReviewRuns([]);
+      setLayoutJobs([]);
+      setSubmissionRecords([]);
+      return;
+    }
+    void refreshWorkbench(token, selectedProjectId ?? undefined);
   }, [token, selectedProjectId]);
 
   async function hydrateConsole(activeToken: string) {
@@ -173,6 +232,37 @@ export default function Home() {
       setDocuments(rows);
       setImportDocumentId((current) => current ?? rows[0]?.id ?? null);
       setSelectedDocumentId((current) => current ?? rows[0]?.id ?? null);
+    } catch (error) {
+      setMessage(readError(error));
+    }
+  }
+
+  async function refreshWorkbench(activeToken: string, projectId?: number) {
+    try {
+      const [
+        overview,
+        libraryRows,
+        decompositionRows,
+        generationRows,
+        reviewRows,
+        layoutRows,
+        submissionRows,
+      ] = await Promise.all([
+        getWorkbenchOverview(activeToken, projectId),
+        listKnowledgeBaseEntries(activeToken, projectId),
+        listDecompositionRuns(activeToken, projectId),
+        listGenerationJobs(activeToken, projectId),
+        listReviewRuns(activeToken, projectId),
+        listLayoutJobs(activeToken, projectId),
+        listSubmissionRecords(activeToken, projectId),
+      ]);
+      setWorkbenchOverview(overview);
+      setKnowledgeBaseEntries(libraryRows);
+      setDecompositionRuns(decompositionRows);
+      setGenerationJobs(generationRows);
+      setReviewRuns(reviewRows);
+      setLayoutJobs(layoutRows);
+      setSubmissionRecords(submissionRows);
     } catch (error) {
       setMessage(readError(error));
     }
@@ -226,6 +316,154 @@ export default function Home() {
       setEvidenceResults([]);
       setDocumentEvidenceUnits([]);
       setMessage(`文档已上传到项目 ${selectedProject?.name ?? selectedProjectId}。`);
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleCreateLibraryEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !selectedProjectId || !libraryTitle.trim()) {
+      return;
+    }
+    try {
+      setBusyLabel("正在登记投标资料");
+      await createKnowledgeBaseEntry(token, {
+        project_id: selectedProjectId,
+        source_document_id: selectedDocumentId ?? undefined,
+        category: libraryCategory,
+        title: libraryTitle.trim(),
+        owner_name: libraryOwnerName.trim(),
+      });
+      await refreshWorkbench(token, selectedProjectId);
+      setMessage("投标资料库已新增一条入库记录。");
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleRunLibraryCheck(entryId: number) {
+    if (!token || !selectedProjectId) {
+      return;
+    }
+    try {
+      setBusyLabel("正在执行资料检测");
+      await runKnowledgeBaseCheck(token, entryId);
+      await refreshWorkbench(token, selectedProjectId);
+      setMessage(`投标资料 ${entryId} 已完成检测。`);
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleCreateDecompositionRun(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !selectedProjectId || !decompositionRunName.trim()) {
+      return;
+    }
+    try {
+      setBusyLabel("正在创建招标解析任务");
+      await createDecompositionRun(token, {
+        project_id: selectedProjectId,
+        source_document_id: selectedDocumentId ?? undefined,
+        run_name: decompositionRunName.trim(),
+      });
+      await refreshWorkbench(token, selectedProjectId);
+      setMessage("招标解析任务已加入工作台。");
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleCreateGenerationJob(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !selectedProjectId || !generationJobName.trim()) {
+      return;
+    }
+    try {
+      setBusyLabel("正在创建标书生成任务");
+      await createGenerationJob(token, {
+        project_id: selectedProjectId,
+        source_document_id: selectedDocumentId ?? undefined,
+        job_name: generationJobName.trim(),
+        target_sections: Number(generationTargetSections) || 0,
+      });
+      await refreshWorkbench(token, selectedProjectId);
+      setMessage("标书生成任务已加入工作台。");
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleCreateReviewRun(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !selectedProjectId || !reviewRunName.trim()) {
+      return;
+    }
+    try {
+      setBusyLabel("正在创建标书检测任务");
+      await createReviewRun(token, {
+        project_id: selectedProjectId,
+        source_document_id: selectedDocumentId ?? undefined,
+        run_name: reviewRunName.trim(),
+        review_mode: reviewMode.trim(),
+      });
+      await refreshWorkbench(token, selectedProjectId);
+      setMessage("标书检测任务已加入工作台。");
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleCreateLayoutJob(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !selectedProjectId || !layoutJobName.trim() || !layoutTemplateName.trim()) {
+      return;
+    }
+    try {
+      setBusyLabel("正在创建排版定稿任务");
+      await createLayoutJob(token, {
+        project_id: selectedProjectId,
+        source_document_id: selectedDocumentId ?? undefined,
+        job_name: layoutJobName.trim(),
+        template_name: layoutTemplateName.trim(),
+      });
+      await refreshWorkbench(token, selectedProjectId);
+      setMessage("排版定稿任务已加入工作台。");
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleCreateSubmissionRecord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !selectedProjectId || !submissionTitle.trim() || !submissionStatus.trim()) {
+      return;
+    }
+    try {
+      setBusyLabel("正在创建标书管理记录");
+      await createSubmissionRecord(token, {
+        project_id: selectedProjectId,
+        source_document_id: selectedDocumentId ?? undefined,
+        title: submissionTitle.trim(),
+        status: submissionStatus.trim(),
+      });
+      await refreshWorkbench(token, selectedProjectId);
+      setMessage("标书管理记录已加入工作台。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -424,6 +662,13 @@ export default function Home() {
     setProjects([]);
     setDocuments([]);
     setHistoricalBids([]);
+    setWorkbenchOverview(null);
+    setKnowledgeBaseEntries([]);
+    setDecompositionRuns([]);
+    setGenerationJobs([]);
+    setReviewRuns([]);
+    setLayoutJobs([]);
+    setSubmissionRecords([]);
     setEvidenceResults([]);
     setDocumentEvidenceUnits([]);
     setMessage("已退出登录。");
@@ -464,7 +709,7 @@ export default function Home() {
             <p className="eyebrow">Workbench</p>
             <h2>前后端与数据库联调工作台</h2>
             <p>
-              当前重点是跑通两条纵向闭环：项目文档的真值证据检索，以及历史标书的受控复用与污染校验。
+              当前重点是把投标资料库、招标解析、标书生成、标书检测、排版定稿和标书管理六个模块挂到同一套前后端和数据库上，并保留证据检索与历史标书复用闭环。
             </p>
           </div>
           <div className="hero-stats">
@@ -483,6 +728,24 @@ export default function Home() {
           </div>
         </div>
 
+        <section className="module-strip">
+          {(workbenchOverview?.modules ?? []).map((module) => (
+            <article className="module-card" key={module.module_key}>
+              <div className="module-card-header">
+                <strong>{module.title}</strong>
+                <span className={`badge ${module.status === "ready" ? "badge-success" : ""}`}>
+                  {module.status}
+                </span>
+              </div>
+              <p>{module.description}</p>
+              <div className="module-card-footer">
+                <span>{module.module_key}</span>
+                <strong>{module.count}</strong>
+              </div>
+            </article>
+          ))}
+        </section>
+
         <div className="panel-grid">
           <section className="panel">
             <div className="panel-header">
@@ -495,11 +758,16 @@ export default function Home() {
             <form className="stack" onSubmit={handleLogin}>
               <label>
                 邮箱
-                <input value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
+                <input
+                  autoComplete="username"
+                  value={loginEmail}
+                  onChange={(event) => setLoginEmail(event.target.value)}
+                />
               </label>
               <label>
                 密码
                 <input
+                  autoComplete="current-password"
                   type="password"
                   value={loginPassword}
                   onChange={(event) => setLoginPassword(event.target.value)}
@@ -544,6 +812,7 @@ export default function Home() {
                 <label>
                   API Key
                   <input
+                    autoComplete="new-password"
                     type="password"
                     value={runtimeForm.apiKey}
                     placeholder={runtimeSettings?.api_key_configured ? "后端已配置，可覆盖" : "输入调试用 BYOK"}
@@ -679,6 +948,238 @@ export default function Home() {
                   <span>{formatDate(document.created_at)}</span>
                 </button>
               ))}
+            </div>
+          </section>
+
+          <section className="panel panel-span-2">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Knowledge Library</p>
+                <h3>投标资料库</h3>
+              </div>
+              <span className="badge">{knowledgeBaseEntries.length} 条资料</span>
+            </div>
+            <form className="stack" onSubmit={handleCreateLibraryEntry}>
+              <div className="three-column">
+                <label>
+                  资料分类
+                  <select value={libraryCategory} onChange={(event) => setLibraryCategory(event.target.value)}>
+                    <option value="historical_bid">历史标书</option>
+                    <option value="excellent_bid">优秀标书</option>
+                    <option value="company_qualification">公司资质</option>
+                    <option value="company_performance_asset">公司业绩与资产</option>
+                    <option value="personnel_qualification">人员资质</option>
+                    <option value="personnel_performance">人员业绩</option>
+                  </select>
+                </label>
+                <label>
+                  资料标题
+                  <input value={libraryTitle} onChange={(event) => setLibraryTitle(event.target.value)} />
+                </label>
+                <label>
+                  归口部门
+                  <input value={libraryOwnerName} onChange={(event) => setLibraryOwnerName(event.target.value)} />
+                </label>
+              </div>
+              <div className="inline-hint">
+                <span>当前绑定文档</span>
+                <strong>{selectedDocument ? `${selectedDocument.filename} #${selectedDocument.id}` : "未选择文档"}</strong>
+              </div>
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={!token || !selectedProjectId || !libraryTitle.trim() || Boolean(busyLabel)}
+              >
+                登记入库并生成检测任务
+              </button>
+            </form>
+            <div className="list">
+              {knowledgeBaseEntries.map((entry) => (
+                <div className="list-item static-item" key={entry.id}>
+                  <div>
+                    <strong>{entry.title}</strong>
+                    <p>
+                      {entry.category} · {entry.owner_name || "未指定部门"}
+                    </p>
+                    <p>{entry.detected_summary || "待执行资料检测。"}</p>
+                  </div>
+                  <div className="list-actions">
+                    <span>{entry.detection_status}</span>
+                    <button
+                      className="ghost-button"
+                      onClick={() => void handleRunLibraryCheck(entry.id)}
+                      type="button"
+                    >
+                      运行检测
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel panel-span-3">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Pipelines</p>
+                <h3>招标解析、标书生成、标书检测、排版定稿、标书管理</h3>
+              </div>
+              <span className="badge">{selectedProject ? selectedProject.name : "未选择项目"}</span>
+            </div>
+            <div className="workbench-grid">
+              <form className="stack workbench-card" onSubmit={handleCreateDecompositionRun}>
+                <div className="panel-header compact">
+                  <div>
+                    <p className="eyebrow">招标解析</p>
+                    <h4>Decomposition</h4>
+                  </div>
+                  <span className="badge">{decompositionRuns.length}</span>
+                </div>
+                <label>
+                  任务名
+                  <input value={decompositionRunName} onChange={(event) => setDecompositionRunName(event.target.value)} />
+                </label>
+                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
+                  创建解析任务
+                </button>
+                <div className="mini-list">
+                  {decompositionRuns.map((row) => (
+                    <div className="mini-item" key={row.id}>
+                      <strong>{row.run_name}</strong>
+                      <span>{row.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </form>
+
+              <form className="stack workbench-card" onSubmit={handleCreateGenerationJob}>
+                <div className="panel-header compact">
+                  <div>
+                    <p className="eyebrow">标书生成</p>
+                    <h4>Generation</h4>
+                  </div>
+                  <span className="badge">{generationJobs.length}</span>
+                </div>
+                <label>
+                  任务名
+                  <input value={generationJobName} onChange={(event) => setGenerationJobName(event.target.value)} />
+                </label>
+                <label>
+                  目标章节数
+                  <input
+                    type="number"
+                    min="0"
+                    value={generationTargetSections}
+                    onChange={(event) => setGenerationTargetSections(event.target.value)}
+                  />
+                </label>
+                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
+                  创建生成任务
+                </button>
+                <div className="mini-list">
+                  {generationJobs.map((row) => (
+                    <div className="mini-item" key={row.id}>
+                      <strong>{row.job_name}</strong>
+                      <span>{row.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </form>
+
+              <form className="stack workbench-card" onSubmit={handleCreateReviewRun}>
+                <div className="panel-header compact">
+                  <div>
+                    <p className="eyebrow">标书检测</p>
+                    <h4>Review</h4>
+                  </div>
+                  <span className="badge">{reviewRuns.length}</span>
+                </div>
+                <label>
+                  任务名
+                  <input value={reviewRunName} onChange={(event) => setReviewRunName(event.target.value)} />
+                </label>
+                <label>
+                  模式
+                  <select value={reviewMode} onChange={(event) => setReviewMode(event.target.value)}>
+                    <option value="simulated_scoring">simulated_scoring</option>
+                    <option value="compliance_review">compliance_review</option>
+                  </select>
+                </label>
+                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
+                  创建检测任务
+                </button>
+                <div className="mini-list">
+                  {reviewRuns.map((row) => (
+                    <div className="mini-item" key={row.id}>
+                      <strong>{row.run_name}</strong>
+                      <span>{row.review_mode}</span>
+                    </div>
+                  ))}
+                </div>
+              </form>
+
+              <form className="stack workbench-card" onSubmit={handleCreateLayoutJob}>
+                <div className="panel-header compact">
+                  <div>
+                    <p className="eyebrow">排版定稿</p>
+                    <h4>Layout</h4>
+                  </div>
+                  <span className="badge">{layoutJobs.length}</span>
+                </div>
+                <label>
+                  任务名
+                  <input value={layoutJobName} onChange={(event) => setLayoutJobName(event.target.value)} />
+                </label>
+                <label>
+                  模板
+                  <input value={layoutTemplateName} onChange={(event) => setLayoutTemplateName(event.target.value)} />
+                </label>
+                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
+                  创建排版任务
+                </button>
+                <div className="mini-list">
+                  {layoutJobs.map((row) => (
+                    <div className="mini-item" key={row.id}>
+                      <strong>{row.job_name}</strong>
+                      <span>{row.template_name}</span>
+                    </div>
+                  ))}
+                </div>
+              </form>
+
+              <form className="stack workbench-card" onSubmit={handleCreateSubmissionRecord}>
+                <div className="panel-header compact">
+                  <div>
+                    <p className="eyebrow">标书管理</p>
+                    <h4>Submission</h4>
+                  </div>
+                  <span className="badge">{submissionRecords.length}</span>
+                </div>
+                <label>
+                  标题
+                  <input value={submissionTitle} onChange={(event) => setSubmissionTitle(event.target.value)} />
+                </label>
+                <label>
+                  状态
+                  <select value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value)}>
+                    <option value="draft">draft</option>
+                    <option value="ready_for_submission">ready_for_submission</option>
+                    <option value="submitted">submitted</option>
+                    <option value="archived">archived</option>
+                  </select>
+                </label>
+                <button className="primary-button" type="submit" disabled={!token || !selectedProjectId || Boolean(busyLabel)}>
+                  创建管理记录
+                </button>
+                <div className="mini-list">
+                  {submissionRecords.map((row) => (
+                    <div className="mini-item" key={row.id}>
+                      <strong>{row.title}</strong>
+                      <span>{row.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </form>
             </div>
           </section>
 

@@ -152,6 +152,96 @@ export type HistoricalLeakageResult = {
   matched_terms: string[];
 };
 
+export type WorkbenchModuleSummary = {
+  module_key: string;
+  title: string;
+  count: number;
+  status: string;
+  description: string;
+};
+
+export type WorkbenchOverview = {
+  project_id: number | null;
+  modules: WorkbenchModuleSummary[];
+};
+
+export type KnowledgeBaseEntry = {
+  id: number;
+  organization_id: number;
+  project_id: number | null;
+  source_document_id: number | null;
+  category: string;
+  title: string;
+  owner_name: string;
+  ingestion_status: string;
+  detection_status: string;
+  detected_summary: string;
+  created_by_user_id: number;
+  created_at: string;
+};
+
+export type DecompositionRun = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  source_document_id: number | null;
+  run_name: string;
+  status: string;
+  progress_pct: number;
+  summary_json: string;
+  created_by_user_id: number;
+  created_at: string;
+};
+
+export type GenerationJob = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  source_document_id: number | null;
+  job_name: string;
+  target_sections: number;
+  status: string;
+  created_by_user_id: number;
+  created_at: string;
+};
+
+export type ReviewRun = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  source_document_id: number | null;
+  run_name: string;
+  review_mode: string;
+  status: string;
+  simulated_score: number | null;
+  blocking_issue_count: number;
+  created_by_user_id: number;
+  created_at: string;
+};
+
+export type LayoutJob = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  source_document_id: number | null;
+  job_name: string;
+  template_name: string;
+  status: string;
+  created_by_user_id: number;
+  created_at: string;
+};
+
+export type SubmissionRecord = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  source_document_id: number | null;
+  title: string;
+  status: string;
+  created_by_user_id: number;
+  created_at: string;
+};
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8080";
 
@@ -368,6 +458,217 @@ export function verifyHistoricalLeakage(
 ) {
   return apiRequest<HistoricalLeakageResult>(
     `/api/v1/projects/${projectId}/sections/${sectionId}/verify-historical-leakage`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function getWorkbenchOverview(token: string, projectId?: number) {
+  const params = new URLSearchParams();
+  if (typeof projectId === "number") {
+    params.set("project_id", String(projectId));
+  }
+  const query = params.toString();
+  return apiRequest<WorkbenchOverview>(`/api/v1/workbench/overview${query ? `?${query}` : ""}`, {}, token);
+}
+
+export function listKnowledgeBaseEntries(token: string, projectId?: number) {
+  const params = new URLSearchParams();
+  if (typeof projectId === "number") {
+    params.set("project_id", String(projectId));
+  }
+  const query = params.toString();
+  return apiRequest<KnowledgeBaseEntry[]>(
+    `/api/v1/workbench/library/entries${query ? `?${query}` : ""}`,
+    {},
+    token,
+  );
+}
+
+export function createKnowledgeBaseEntry(
+  token: string,
+  payload: {
+    project_id?: number;
+    source_document_id?: number;
+    category: string;
+    title: string;
+    owner_name?: string;
+  },
+) {
+  return apiRequest<KnowledgeBaseEntry>(
+    "/api/v1/workbench/library/entries",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function runKnowledgeBaseCheck(token: string, entryId: number) {
+  return apiRequest<KnowledgeBaseEntry>(
+    `/api/v1/workbench/library/entries/${entryId}/run-check`,
+    {
+      method: "POST",
+    },
+    token,
+  );
+}
+
+export function listDecompositionRuns(token: string, projectId?: number) {
+  const params = new URLSearchParams();
+  if (typeof projectId === "number") {
+    params.set("project_id", String(projectId));
+  }
+  const query = params.toString();
+  return apiRequest<DecompositionRun[]>(
+    `/api/v1/workbench/decomposition/runs${query ? `?${query}` : ""}`,
+    {},
+    token,
+  );
+}
+
+export function createDecompositionRun(
+  token: string,
+  payload: {
+    project_id: number;
+    source_document_id?: number;
+    run_name: string;
+  },
+) {
+  return apiRequest<DecompositionRun>(
+    "/api/v1/workbench/decomposition/runs",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function listGenerationJobs(token: string, projectId?: number) {
+  const params = new URLSearchParams();
+  if (typeof projectId === "number") {
+    params.set("project_id", String(projectId));
+  }
+  const query = params.toString();
+  return apiRequest<GenerationJob[]>(
+    `/api/v1/workbench/generation/jobs${query ? `?${query}` : ""}`,
+    {},
+    token,
+  );
+}
+
+export function createGenerationJob(
+  token: string,
+  payload: {
+    project_id: number;
+    source_document_id?: number;
+    job_name: string;
+    target_sections: number;
+  },
+) {
+  return apiRequest<GenerationJob>(
+    "/api/v1/workbench/generation/jobs",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function listReviewRuns(token: string, projectId?: number) {
+  const params = new URLSearchParams();
+  if (typeof projectId === "number") {
+    params.set("project_id", String(projectId));
+  }
+  const query = params.toString();
+  return apiRequest<ReviewRun[]>(
+    `/api/v1/workbench/review/runs${query ? `?${query}` : ""}`,
+    {},
+    token,
+  );
+}
+
+export function createReviewRun(
+  token: string,
+  payload: {
+    project_id: number;
+    source_document_id?: number;
+    run_name: string;
+    review_mode: string;
+  },
+) {
+  return apiRequest<ReviewRun>(
+    "/api/v1/workbench/review/runs",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function listLayoutJobs(token: string, projectId?: number) {
+  const params = new URLSearchParams();
+  if (typeof projectId === "number") {
+    params.set("project_id", String(projectId));
+  }
+  const query = params.toString();
+  return apiRequest<LayoutJob[]>(
+    `/api/v1/workbench/layout/jobs${query ? `?${query}` : ""}`,
+    {},
+    token,
+  );
+}
+
+export function createLayoutJob(
+  token: string,
+  payload: {
+    project_id: number;
+    source_document_id?: number;
+    job_name: string;
+    template_name: string;
+  },
+) {
+  return apiRequest<LayoutJob>(
+    "/api/v1/workbench/layout/jobs",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function listSubmissionRecords(token: string, projectId?: number) {
+  const params = new URLSearchParams();
+  if (typeof projectId === "number") {
+    params.set("project_id", String(projectId));
+  }
+  const query = params.toString();
+  return apiRequest<SubmissionRecord[]>(
+    `/api/v1/workbench/submission-records${query ? `?${query}` : ""}`,
+    {},
+    token,
+  );
+}
+
+export function createSubmissionRecord(
+  token: string,
+  payload: {
+    project_id: number;
+    source_document_id?: number;
+    title: string;
+    status: string;
+  },
+) {
+  return apiRequest<SubmissionRecord>(
+    "/api/v1/workbench/submission-records",
     {
       method: "POST",
       body: JSON.stringify(payload),
