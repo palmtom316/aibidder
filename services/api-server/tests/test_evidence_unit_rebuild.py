@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.db.models import EvidenceUnit
+from app.db.session import SessionLocal
 from app.main import app
 from tests.test_historical_bid_ingestion import _build_minimal_docx, _login
 
@@ -117,3 +120,37 @@ def test_evidence_unit_rebuild_api_requires_project_membership() -> None:
         headers={"Authorization": f"Bearer {writer_token}"},
     )
     assert response.status_code == 403
+
+
+def test_evidence_unit_rebuild_replaces_existing_units_for_latest_version() -> None:
+    client = TestClient(app)
+    token = _login(client, "project_manager@example.com", "manager123456")
+    project_id, document_id = _upload_project_document(
+        client,
+        token,
+        project_name="Evidence Replace Project",
+        document_type="tender",
+        filename="replace.docx",
+    )
+
+    first_rebuild = client.post(
+        f"/api/v1/projects/{project_id}/documents/{document_id}/rebuild-evidence-units",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert first_rebuild.status_code == 200, first_rebuild.text
+
+    second_rebuild = client.post(
+        f"/api/v1/projects/{project_id}/documents/{document_id}/rebuild-evidence-units",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second_rebuild.status_code == 200, second_rebuild.text
+    assert len(second_rebuild.json()) == 4
+
+    with SessionLocal() as db:
+        stored_units = list(
+            db.scalars(
+                select(EvidenceUnit).where(EvidenceUnit.document_id == document_id).order_by(EvidenceUnit.id.asc())
+            )
+        )
+
+    assert len(stored_units) == 4

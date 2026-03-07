@@ -35,7 +35,11 @@ from app.schemas.writing_runtime import (
     HistoricalLeakageVerificationResponse,
 )
 from app.services.evidence_search import search_evidence_units
-from app.services.evidence_unit_builder import list_evidence_units_for_document, rebuild_evidence_units_for_document
+from app.services.evidence_unit_builder import (
+    list_evidence_units_for_document,
+    rebuild_evidence_units_for_document,
+    supports_evidence_units,
+)
 from app.services.historical_leakage_checker import verify_historical_leakage
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
@@ -365,6 +369,10 @@ def upload_document(
             )
         )
     document_version.status = ingestion_result.status
+
+    if ingestion_result.status == "parsed" and supports_evidence_units(document.document_type):
+        db.flush()
+        rebuild_evidence_units_for_document(db, document)
 
     db.commit()
     db.refresh(document)

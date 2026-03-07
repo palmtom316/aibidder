@@ -6,7 +6,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db.models import DocumentArtifact, DocumentVersion
+from app.db.models import DocumentArtifact, DocumentVersion, EvidenceUnit
 from app.db.session import SessionLocal
 from app.main import app
 
@@ -235,6 +235,127 @@ def test_upload_docx_creates_markdown_and_json_artifacts_with_anchors() -> None:
     assert parsed_payload["sections"][1]["title"] == "第二章 技术方案"
     assert parse_log["parser"] == "docx_ooxml"
     assert parse_log["transitions"] == ["uploaded", "parsing", "parsed"]
+
+
+def test_upload_tender_docx_auto_builds_evidence_units() -> None:
+    client = TestClient(app)
+    token = _login(client, "project_manager@example.com", "manager123456")
+
+    project_response = client.post(
+        "/api/v1/projects",
+        json={"name": "Tender Evidence Auto Build Project"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert project_response.status_code == 201
+    project_id = project_response.json()["id"]
+
+    docx_payload = _build_minimal_docx(
+        ("Heading1", "第一章 项目概况"),
+        ("Normal", "本项目工期180日历天。"),
+        ("Heading1", "第二章 质量保证措施"),
+        ("Normal", "投标人应建立质量保证体系。"),
+    )
+    uploaded = client.post(
+        f"/api/v1/projects/{project_id}/documents/upload",
+        data={"document_type": "tender"},
+        files={
+            "file": (
+                "tender-evidence.docx",
+                docx_payload,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    document_id = uploaded.json()["id"]
+
+    with SessionLocal() as db:
+        stored_units = list(
+            db.scalars(
+                select(EvidenceUnit).where(EvidenceUnit.document_id == document_id).order_by(EvidenceUnit.id.asc())
+            )
+        )
+
+    assert len(stored_units) == 4
+    assert {item.document_type for item in stored_units} == {"tender"}
+
+    search = client.get(
+        f"/api/v1/projects/{project_id}/evidence/search",
+        params={"q": "质量保证体系"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert search.status_code == 200, search.text
+    payload = search.json()
+    assert any(item["document_id"] == document_id for item in payload)
+
+
+def test_upload_norm_docx_auto_builds_evidence_units_and_proposal_does_not() -> None:
+    client = TestClient(app)
+    token = _login(client, "project_manager@example.com", "manager123456")
+
+    project_response = client.post(
+        "/api/v1/projects",
+        json={"name": "Norm Evidence Auto Build Project"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert project_response.status_code == 201
+    project_id = project_response.json()["id"]
+
+    docx_payload = _build_minimal_docx(
+        ("Heading1", "第一章 项目概况"),
+        ("Normal", "本项目工期180日历天。"),
+        ("Heading1", "第二章 质量保证措施"),
+        ("Normal", "投标人应建立质量保证体系。"),
+    )
+
+    norm_uploaded = client.post(
+        f"/api/v1/projects/{project_id}/documents/upload",
+        data={"document_type": "norm"},
+        files={
+            "file": (
+                "norm-evidence.docx",
+                docx_payload,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert norm_uploaded.status_code == 201, norm_uploaded.text
+    norm_document_id = norm_uploaded.json()["id"]
+
+    proposal_uploaded = client.post(
+        f"/api/v1/projects/{project_id}/documents/upload",
+        data={"document_type": "proposal"},
+        files={
+            "file": (
+                "proposal-skip.docx",
+                docx_payload,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert proposal_uploaded.status_code == 201, proposal_uploaded.text
+    proposal_document_id = proposal_uploaded.json()["id"]
+
+    with SessionLocal() as db:
+        norm_units = list(
+            db.scalars(
+                select(EvidenceUnit).where(EvidenceUnit.document_id == norm_document_id).order_by(EvidenceUnit.id.asc())
+            )
+        )
+        proposal_units = list(
+            db.scalars(
+                select(EvidenceUnit)
+                .where(EvidenceUnit.document_id == proposal_document_id)
+                .order_by(EvidenceUnit.id.asc())
+            )
+        )
+
+    assert len(norm_units) == 4
+    assert {item.document_type for item in norm_units} == {"norm"}
+    assert proposal_units == []
 
 
 def test_upload_doc_normalizes_to_docx_then_parses() -> None:

@@ -99,5 +99,9 @@ def list_evidence_units_for_document(db: Session, document_id: int) -> list[Evid
     return list(db.scalars(stmt))
 
 
+def supports_evidence_units(document_type: str) -> bool:
+    return document_type in ALLOWED_EVIDENCE_DOCUMENT_TYPES
+
+
 def _split_paragraphs(content: str) -> list[str]:
     return [paragraph.strip() for paragraph in content.splitlines() if paragraph.strip()]
