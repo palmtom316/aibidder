@@ -27,6 +27,7 @@
 - LangGraph 仅作为 Milestone C 拆解编排候选，用于显式工作流和并行提取，不替代 Phase 1 的受控写作主链路，也不将系统改造成重型 agent 网络。
 - 重型 agent 仅作为生成后的全局复核层使用，承担合规、一致性、漏项、合同风险和证据支撑审查；它是第二道防线，不替代事前约束、证据绑定和规则校验。
 - 招标拆解前端应采用“工作台”形态：顶部展示任务总体进度与当前阶段，中部按成果维度展示拆解卡片，底部或侧栏展示流程/证据联动；信息架构可参考工业解析任务台，但不得弱化证据定位与风险提示。
+- `docx/doc` 默认走确定性结构解析，不以 AI 作为主结构解析器；AI 只负责语义补强、章节分类、表格归类和招标要点抽取。
 
 ## 1. 里程碑与交付物
 
@@ -156,6 +157,31 @@
 | 成本控制 | 全文反复扫描会显著增加 token 成本和时延 | 优先做章节导航、命中筛选和局部提取；只把相关章节送给对应 extractor；重型 agent 仅放在生成后复核层，不参与默认拆解主链路 |
 | 写作安全 | 历史标书和招标真值若混用，容易污染写作结果 | 继续坚持 `evidence_pack` 与 `reuse_pack` 分层；拆解结果只从真值证据层产生，历史内容只进入受控复用链路 |
 | 整稿合规复核 | 分节生成后仍可能出现全局参数冲突、漏项和合同风险 | 生成后增加 `多 reviewer agents + adjudicator` 复核层；输出结构化问题单，不直接改正文；严重问题阻断导出 |
+
+### 5.2 文档类型解析与 AI 补强分工
+
+| 文档类型 | 主解析路径 | AI 参与位置 | 建议模型 |
+| --- | --- | --- | --- |
+| `pdf` | 高保真 PDF 解析/OCR，优先评估 `Docling` 与兼容 OCR adapter | OCR、表格恢复后的语义拆解、章节导航、结果抽取 | `ocr_role = deepseek-ai/DeepSeek-OCR`；`decomposition_navigator_role = deepseek-ai/DeepSeek-V3.2`；`decomposition_extractor_role = Qwen/Qwen3-30B-A3B-Instruct-2507` |
+| `docx` | OOXML 原生结构解析，产出 `Markdown + JSON` | 章节语义分类、表格语义归类、招标要点抽取 | `decomposition_extractor_role = Qwen/Qwen3-30B-A3B-Instruct-2507`；复杂跨章节判断使用 `decomposition_navigator_role = deepseek-ai/DeepSeek-V3.2` |
+| `doc` | 先归一化为 `docx`，再走同一条 OOXML 结构解析路径 | 与 `docx` 相同，仅在结构已恢复后做语义补强 | 同 `docx` |
+
+补充约束：
+
+- `docx/doc` 不使用 AI 作为默认主结构解析器，避免成本上升和结构不稳定。
+- `DeepSeek-R1` 不参与日常结构补强，保留给整稿复核与 adjudicator 汇总层。
+- 角色模型应通过 BYOK/runtime settings 可覆盖，默认先走 `SiliconFlow OpenAI-compatible` 路径。
+
+### 5.3 本地联调默认角色模型矩阵（BYOK）
+
+| 角色 | 默认模型 | 用途 |
+| --- | --- | --- |
+| `ocr_role` | `deepseek-ai/DeepSeek-OCR` | PDF OCR、图像文本读取 |
+| `decomposition_navigator_role` | `deepseek-ai/DeepSeek-V3.2` | 章节导航、任务分派、复杂跨章节判断 |
+| `decomposition_extractor_role` | `Qwen/Qwen3-30B-A3B-Instruct-2507` | 七类拆解结果抽取、`docx/doc` 语义补强 |
+| `writer_role` | `deepseek-ai/DeepSeek-V3` | 受控写作、改写、组织表达 |
+| `reviewer_role` | `deepseek-ai/DeepSeek-R1` | 合规、一致性、漏项复核 |
+| `adjudicator_role` | `deepseek-ai/DeepSeek-R1` | 多 reviewer 结论汇总与裁决 |
 
 ## 6. 数据模型增补建议
 
