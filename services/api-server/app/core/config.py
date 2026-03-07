@@ -17,7 +17,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 120
     storage_root: str = "./storage"
-    cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_allowed_origins: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:13000,"
+        "http://127.0.0.1:13000"
+    )
     model_provider: str = "openai_compatible"
     default_model_name: str = "gpt-4.1-mini"
     model_api_base_url: str | None = None

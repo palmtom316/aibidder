@@ -4,22 +4,30 @@ services:
       context: ./services/api-server
     env_file:
       - .env
+    restart: unless-stopped
     ports:
       - "${AIBIDDER_API_PORT:-8080}:8080"
     depends_on:
-      - postgres
-      - redis
-      - minio
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
 
   worker:
     build:
       context: ./services/worker
     env_file:
       - .env
+    restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
-      - minio
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
 
   web:
     build:
@@ -39,6 +47,11 @@ services:
       POSTGRES_DB: aibidder
       POSTGRES_USER: aibidder
       POSTGRES_PASSWORD: aibidder
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aibidder -d aibidder"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     ports:
       - "${AIBIDDER_POSTGRES_PORT:-15432}:5432"
     volumes:
