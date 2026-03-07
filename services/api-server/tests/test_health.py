@@ -32,3 +32,20 @@ def test_health_request_emits_structured_log_and_request_id(caplog) -> None:
     assert record.status_code == 200
     assert record.request_id == response.headers["X-Request-ID"]
     assert record.duration_ms >= 0
+
+
+def test_health_endpoint_supports_frontend_cors_preflight() -> None:
+    client = TestClient(app)
+
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "authorization" in response.headers["access-control-allow-headers"].lower()

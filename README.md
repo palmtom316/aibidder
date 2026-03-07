@@ -17,6 +17,44 @@ AI Bid Writing Platform (Phase 1 bootstrap).
    - `docker compose up -d --build`
 3. API health check:
    - `curl -sS http://localhost:8080/health`
+4. Frontend console:
+   - open `http://localhost:13000`
+
+Local default host ports are parameterized to avoid conflicts:
+
+- web: `13000`
+- api: `8080`
+- postgres: `15432`
+- redis: `16379`
+- minio api: `19000`
+- minio console: `19001`
+
+## Local Integration Console
+
+The local integration target is a console-style workbench that validates:
+
+- login against `/api/v1/auth/login`
+- project creation and document upload
+- `tender` / `norm` evidence search
+- historical bid import, reuse search, and leakage verification
+- BYOK runtime settings with SiliconFlow defaults and role-based model selection
+
+Default seeded users:
+
+- `admin@example.com` / `admin123456`
+- `project_manager@example.com` / `manager123456`
+- `writer@example.com` / `writer123456`
+
+Important runtime defaults for local debugging:
+
+- API base URL: `http://localhost:8080`
+- BYOK provider: `openai_compatible`
+- BYOK runtime base URL: `https://api.siliconflow.cn/v1`
+- OCR model: `deepseek-ai/DeepSeek-OCR`
+- Navigator model: `deepseek-ai/DeepSeek-V3.2`
+- Extractor model: `Qwen/Qwen3-30B-A3B-Instruct-2507`
+- Writer model: `deepseek-ai/DeepSeek-V3`
+- Reviewer model: `deepseek-ai/DeepSeek-R1`
 
 ## Phase 1 Constraints
 

@@ -1,0 +1,50 @@
+:root {
+  color-scheme: light;
+  --bg: #f3efe6;
+  --panel: rgba(255, 252, 246, 0.82);
+  --panel-strong: rgba(255, 252, 246, 0.96);
+  --ink: #1d2533;
+  --muted: #667083;
+  --line: rgba(29, 37, 51, 0.12);
+  --accent: #2160ff;
+  --accent-soft: rgba(33, 96, 255, 0.14);
+  --success: #1b9c67;
+  --warning: #be6a00;
+  --danger: #c24538;
+  --shadow: 0 24px 48px rgba(28, 42, 64, 0.12);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(33, 96, 255, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(28, 156, 103, 0.12), transparent 22%),
+    linear-gradient(180deg, #f8f3eb 0%, var(--bg) 100%);
+  color: var(--ink);
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}

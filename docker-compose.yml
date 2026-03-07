@@ -1,13 +1,11 @@
-version: "3.9"
-
 services:
   api:
     build:
       context: ./services/api-server
     env_file:
-      - .env.example
+      - .env
     ports:
-      - "8080:8080"
+      - "${AIBIDDER_API_PORT:-8080}:8080"
     depends_on:
       - postgres
       - redis
@@ -17,7 +15,7 @@ services:
     build:
       context: ./services/worker
     env_file:
-      - .env.example
+      - .env
     depends_on:
       - postgres
       - redis
@@ -26,8 +24,12 @@ services:
   web:
     build:
       context: ./src/frontend
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8080}
     ports:
-      - "3000:3000"
+      - "${AIBIDDER_WEB_PORT:-3000}:3000"
     depends_on:
       - api
 
@@ -38,14 +40,14 @@ services:
       POSTGRES_USER: aibidder
       POSTGRES_PASSWORD: aibidder
     ports:
-      - "5432:5432"
+      - "${AIBIDDER_POSTGRES_PORT:-15432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${AIBIDDER_REDIS_PORT:-16379}:6379"
 
   minio:
     image: minio/minio:latest
@@ -54,8 +56,8 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio123
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${AIBIDDER_MINIO_API_PORT:-19000}:9000"
+      - "${AIBIDDER_MINIO_CONSOLE_PORT:-19001}:9001"
     volumes:
       - miniodata:/data
 
