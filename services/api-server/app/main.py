@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
+from app.api.routes.historical_bids import router as historical_bids_router
 from app.api.routes.projects import router as projects_router
 from app.core.config import settings
 from app.db.bootstrap import initialize_database
@@ -25,6 +26,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(health_router)
+app.include_router(historical_bids_router)
 app.include_router(projects_router)
 
 

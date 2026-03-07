@@ -10,6 +10,15 @@
 
 ---
 
+## Reference Constraints
+
+- Use `palmtom316/ExpertDatebase` only as a reference for:
+  - frontend console layout patterns
+  - BYOK runtime settings and connectivity-check flow
+  - MinerU and OpenAI-compatible OCR adapter handling for PDF
+- Do not import that project’s vector retrieval, hybrid search, or Vue implementation directly into this codebase.
+- Preserve this project’s Phase 1 constraints: lexical retrieval and structured facts only on the critical path.
+
 ### Task 1: Historical Bid Document Base
 
 **Files:**

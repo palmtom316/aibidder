@@ -16,20 +16,29 @@ class ParsedSection:
 
 @dataclass(frozen=True)
 class ParsedDocument:
+    parser_name: str
     markdown: str
     structured_payload: dict
 
 
-def parse_document(source_path: str, filename: str) -> ParsedDocument | None:
+def parse_document(
+    source_path: str,
+    filename: str,
+    normalized_from: str | None = None,
+) -> ParsedDocument | None:
     suffix = Path(filename).suffix.lower()
     if suffix == ".docx":
-        return _parse_docx(source_path)
+        return _parse_docx(source_path, filename, normalized_from=normalized_from)
     if suffix == ".pdf":
-        return _parse_pdf_fallback(source_path)
+        return _parse_pdf_fallback(source_path, filename)
     return None
 
 
-def _parse_docx(source_path: str) -> ParsedDocument | None:
+def _parse_docx(
+    source_path: str,
+    filename: str,
+    normalized_from: str | None = None,
+) -> ParsedDocument | None:
     with ZipFile(source_path) as archive:
         document_xml = archive.read("word/document.xml")
 
@@ -98,6 +107,11 @@ def _parse_docx(source_path: str) -> ParsedDocument | None:
         sections.append(current_section)
 
     structured_payload = {
+        "document": {
+            "format": "docx",
+            "filename": filename,
+            "normalized_from": normalized_from,
+        },
         "sections": [
             {
                 "title": section.title,
@@ -107,12 +121,16 @@ def _parse_docx(source_path: str) -> ParsedDocument | None:
                 "content": section.content,
             }
             for section in sections
-        ]
+        ],
     }
-    return ParsedDocument(markdown="\n\n".join(markdown_lines), structured_payload=structured_payload)
+    return ParsedDocument(
+        parser_name="docx_ooxml",
+        markdown="\n\n".join(markdown_lines),
+        structured_payload=structured_payload,
+    )
 
 
-def _parse_pdf_fallback(source_path: str) -> ParsedDocument | None:
+def _parse_pdf_fallback(source_path: str, filename: str) -> ParsedDocument | None:
     data = Path(source_path).read_bytes()
     try:
         text = data.decode("utf-8").strip()
@@ -128,6 +146,11 @@ def _parse_pdf_fallback(source_path: str) -> ParsedDocument | None:
 
     markdown = "\n\n".join(lines)
     structured_payload = {
+        "document": {
+            "format": "pdf",
+            "filename": filename,
+            "normalized_from": None,
+        },
         "sections": [
             {
                 "title": "Page 1",
@@ -136,9 +159,13 @@ def _parse_pdf_fallback(source_path: str) -> ParsedDocument | None:
                 "page": 1,
                 "content": "\n".join(lines),
             }
-        ]
+        ],
     }
-    return ParsedDocument(markdown=markdown, structured_payload=structured_payload)
+    return ParsedDocument(
+        parser_name="pdf_fallback",
+        markdown=markdown,
+        structured_payload=structured_payload,
+    )
 
 
 def dump_structured_payload(parsed_document: ParsedDocument) -> str:

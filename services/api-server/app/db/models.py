@@ -87,3 +87,68 @@ class DocumentArtifact(Base):
     artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class HistoricalBidDocument(Base):
+    __tablename__ = "historical_bid_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), nullable=False, unique=True, index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    project_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    region: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    is_recommended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    default_usage_mode: Mapped[str] = mapped_column(String(64), nullable=False, default="reuse_allowed")
+    ingestion_status: Mapped[str] = mapped_column(String(64), nullable=False, default="imported")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class HistoricalBidSection(Base):
+    __tablename__ = "historical_bid_sections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    historical_bid_document_id: Mapped[int] = mapped_column(
+        ForeignKey("historical_bid_documents.id"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    section_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    section_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    anchor: Mapped[str] = mapped_column(String(128), nullable=False)
+    page_start: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    page_end: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    fts_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class HistoricalReuseUnit(Base):
+    __tablename__ = "historical_reuse_units"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    historical_bid_section_id: Mapped[int] = mapped_column(
+        ForeignKey("historical_bid_sections.id"), nullable=False, index=True
+    )
+    unit_type: Mapped[str] = mapped_column(String(64), nullable=False, default="paragraph")
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    sanitized_text: Mapped[str] = mapped_column(Text, nullable=False)
+    reuse_mode: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    fact_density_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    risk_level: Mapped[str] = mapped_column(String(32), nullable=False, default="low")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class HistoricalRiskMark(Base):
+    __tablename__ = "historical_risk_marks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    historical_reuse_unit_id: Mapped[int] = mapped_column(
+        ForeignKey("historical_reuse_units.id"), nullable=False, index=True
+    )
+    risk_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    raw_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    replacement_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

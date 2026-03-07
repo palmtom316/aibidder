@@ -13,12 +13,14 @@
 ## 0. 实施原则（硬约束）
 
 - Phase 1 禁止引入 embedding / vector DB / rerank。
-- 事实来源仅限规范与企业事实库；历史/优秀标书仅作风格与结构参考，不作为事实真值来源。
+- 事实来源仅限规范与企业事实库；历史/优秀标书可作为受控复用候选，但不作为事实真值来源。
 - 每段生成内容必须可追溯来源，无法支撑则显式标记。
 - 文本知识与结构化企业事实必须走两条检索通道：文档走 FTS/BM25 风格检索，企业事实走 SQL/API 查询。
 - 长上下文能力仅用于 RFP 全文解析与跨章节全局一致性复核，不作为默认检索或默认生成方案。
 - 所有写作输出必须经过约束矩阵与证据绑定校验后才能进入导出链路。
 - 输出仅支持模板化 DOCX，保留人工 Word 最终调整。
+- 历史标书运行时只能以 `reuse_pack` 形式进入写作链路；进入运行时的内容必须先脱敏，不得直接暴露原始历史文本。
+- 写作运行时必须执行历史污染校验；显式禁词和已选历史复用单元的风险标记都应参与拦截。
 
 ## 1. 里程碑与交付物
 
@@ -32,11 +34,12 @@
 
 ### Milestone B（文档与知识层）
 
-- PDF/DOCX 解析产物（Markdown + JSON）
+- PDF/DOCX/DOC 解析产物（Markdown + JSON）
 - 文档章节映射与知识单元切分（含页码/章节/段落锚点）
 - 文本知识库分类与企业事实查询接口分层
 - PostgreSQL FTS 索引与词典归一
 - 证据包聚合接口
+- 历史标书入库与章节/复用单元/风险标记抽取
 
 ### Milestone C（招标拆解）
 
@@ -67,12 +70,12 @@
 2. 建立数据库基线与迁移（organizations/users/projects/documents/...）。
 3. 完成认证、RBAC 与项目成员管理 API。
 4. 打通上传链路：文件校验、对象存储、版本记录。
-5. 接入 OCR/解析器并产出 Markdown/JSON artifacts，同时生成章节映射与证据锚点。
-6. 实现知识单元抽取、库分类、FTS 索引刷新任务，并定义 `evidence_unit` 抽象。
-7. 构建检索工具 API（`search_norms`、`read_norm_clause`、`search_bid_examples`）与企业事实查询 API（`get_company_fact`、`list_project_credentials`）。
+5. 接入 OCR/解析器并产出 Markdown/JSON artifacts，同时生成章节映射与证据锚点；支持 `pdf/docx/doc` 三类输入，其中 `doc` 先归一化为 `docx`。
+6. 实现知识单元抽取、库分类、FTS 索引刷新任务，并定义 `evidence_unit` 抽象；为历史标书补充 section、reuse unit、risk mark 语义层。
+7. 构建检索工具 API（`search_norms`、`read_norm_clause`、`search_bid_examples`）与企业事实查询 API（`get_company_fact`、`list_project_credentials`）；历史标书检索仅返回脱敏后的 `reuse_pack`。
 8. 实现招标拆解引擎与结果持久化，输出要求树、约束矩阵、响应任务清单、证据需求清单。
 9. 为拆解引擎增加 `extract → grade → retry` 闭环，优先保障废标项、资质、工期、有效期等强约束提取准确率。
-10. 实现生成编排器（工具调用 + 证据绑定 + 校验），默认使用检索证据包，长上下文仅用于整体解析与全局复核。
+10. 实现生成编排器（工具调用 + 证据绑定 + 校验），默认使用检索证据包，长上下文仅用于整体解析与全局复核；历史标书内容必须经过泄漏校验后才能进入后续环节。
 11. 实现 DOCX 模板渲染与导出。
 12. 完成前端核心流（项目→上传→拆解→写作→导出）。
 13. 完成审计日志、脱敏 hook、重试机制、降级策略与验收测试。

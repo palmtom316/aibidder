@@ -205,3 +205,27 @@ while avoiding:
 - expensive up-front manual labeling
 - brittle governance workflows
 - architectural drift away from the project’s lexical and evidence-first foundation
+
+## 13. External Reference Alignment
+
+The public repository `palmtom316/ExpertDatebase` may be used as a reference implementation in three narrow areas only:
+
+- frontend console information architecture
+- BYOK and runtime settings flow
+- MinerU and OpenAI-compatible OCR adapter handling for PDF ingestion
+
+Reference repository:
+
+- `https://github.com/palmtom316/ExpertDatebase`
+
+Allowed reuse principles:
+
+- reuse the console-style page composition and settings-drawer interaction model as UI reference
+- reuse the idea of front-end runtime settings plus back-end connectivity checks for BYOK
+- reuse the idea of supporting both MinerU-native APIs and OpenAI-compatible OCR APIs behind a single PDF adapter boundary
+
+Explicit non-goals for reference reuse:
+
+- do not inherit that project’s vector or hybrid retrieval direction into this project’s Phase 1 critical path
+- do not port Vue components directly as implementation, since this project’s target frontend stack remains Next.js + React + TypeScript
+- do not adopt PDF-only upload assumptions, since this project must support `pdf + docx + doc`

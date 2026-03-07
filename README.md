@@ -23,4 +23,19 @@ AI Bid Writing Platform (Phase 1 bootstrap).
 - Lexical retrieval only (PostgreSQL FTS)
 - No embeddings / vector DB / rerank
 - OpenAI-compatible model provider abstraction
-- PDF/DOCX in, template DOCX out
+- PDF/DOCX/DOC in, template DOCX out
+
+## Historical Bid Reuse Controls
+
+- Historical bids are imported as managed reference assets, not fact truth sources.
+- Historical ingestion reuses the document pipeline:
+  - `pdf` via OCR/parser adapters
+  - `docx` via structured OOXML parsing
+  - `doc` via normalization to `docx` before parsing
+- Historical bid processing creates:
+  - document-level metadata
+  - section records
+  - paragraph-level reuse units
+  - risk marks for legacy project names, dates, durations, personnel names, and similar fields
+- Writing-time retrieval returns a sanitized `reuse_pack` only. Runtime packs exclude raw historical text and expose sanitized candidate text grouped as `safe_reuse`, `slot_reuse`, and `style_only`.
+- Generated text must pass historical leakage verification before it can move forward. Leakage checks combine explicit forbidden legacy terms with the selected reuse units' recorded risk marks.

@@ -3,9 +3,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user, require_roles
-from app.core.document_parser import dump_structured_payload, parse_document
-from app.core.storage import save_generated_artifact, save_upload, validate_upload
-from app.db.models import Document, DocumentArtifact, DocumentVersion, Project, ProjectMember, User, UserRole
+from app.core.document_ingestion import ingest_document
+from app.core.storage import save_upload, validate_upload
+from app.db.models import (
+    Document,
+    DocumentArtifact,
+    DocumentVersion,
+    HistoricalBidDocument,
+    HistoricalBidSection,
+    HistoricalRiskMark,
+    HistoricalReuseUnit,
+    Project,
+    ProjectMember,
+    User,
+    UserRole,
+)
 from app.db.session import get_db
 from app.schemas.auth import UserIdentity
 from app.schemas.project import (
@@ -16,6 +28,11 @@ from app.schemas.project import (
     ProjectMemberResponse,
     ProjectResponse,
 )
+from app.schemas.writing_runtime import (
+    HistoricalLeakageVerificationRequest,
+    HistoricalLeakageVerificationResponse,
+)
+from app.services.historical_leakage_checker import verify_historical_leakage
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 
@@ -253,40 +270,71 @@ def upload_document(
         )
     )
 
-    parsed_document = parse_document(storage_path, file.filename or "upload")
-    if parsed_document is not None:
-        markdown_path = save_generated_artifact(
-            project_id=project_id,
-            document_id=document.id,
-            version_no=document_version.version_no,
-            artifact_type="markdown",
-            content=parsed_document.markdown,
-            extension=".md",
-        )
-        json_path = save_generated_artifact(
-            project_id=project_id,
-            document_id=document.id,
-            version_no=document_version.version_no,
-            artifact_type="json",
-            content=dump_structured_payload(parsed_document),
-            extension=".json",
-        )
+    ingestion_result = ingest_document(
+        project_id=project_id,
+        document_id=document.id,
+        version_no=document_version.version_no,
+        source_path=storage_path,
+        filename=file.filename or "upload",
+    )
+    for artifact in ingestion_result.artifacts:
         db.add(
             DocumentArtifact(
                 document_version_id=document_version.id,
-                artifact_type="markdown",
-                storage_path=markdown_path,
+                artifact_type=artifact.artifact_type,
+                storage_path=artifact.storage_path,
             )
         )
-        db.add(
-            DocumentArtifact(
-                document_version_id=document_version.id,
-                artifact_type="json",
-                storage_path=json_path,
-            )
-        )
-        document_version.status = "parsed"
+    document_version.status = ingestion_result.status
 
     db.commit()
     db.refresh(document)
     return document
+
+
+def _load_history_candidate_terms(
+    *,
+    reuse_unit_ids: list[int],
+    organization_id: int,
+    db: Session,
+) -> list[str]:
+    if not reuse_unit_ids:
+        return []
+
+    stmt = (
+        select(HistoricalRiskMark.raw_value)
+        .join(HistoricalReuseUnit, HistoricalReuseUnit.id == HistoricalRiskMark.historical_reuse_unit_id)
+        .join(HistoricalBidSection, HistoricalBidSection.id == HistoricalReuseUnit.historical_bid_section_id)
+        .join(HistoricalBidDocument, HistoricalBidDocument.id == HistoricalBidSection.historical_bid_document_id)
+        .where(
+            HistoricalReuseUnit.id.in_(reuse_unit_ids),
+            HistoricalBidDocument.organization_id == organization_id,
+        )
+    )
+    return [value for value in db.scalars(stmt) if value]
+
+
+@router.post(
+    "/{project_id}/sections/{section_id}/verify-historical-leakage",
+    response_model=HistoricalLeakageVerificationResponse,
+)
+def verify_section_historical_leakage(
+    project_id: int,
+    section_id: str,
+    payload: HistoricalLeakageVerificationRequest,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> HistoricalLeakageVerificationResponse:
+    _get_project_for_member(project_id, current_user, db)
+    legacy_terms = set(payload.forbidden_legacy_terms)
+    legacy_terms.update(
+        _load_history_candidate_terms(
+            reuse_unit_ids=payload.history_candidate_pack.reuse_unit_ids,
+            organization_id=current_user.organization_id,
+            db=db,
+        )
+    )
+    return verify_historical_leakage(
+        draft_text=payload.draft_text,
+        forbidden_legacy_terms=sorted(legacy_terms),
+    )

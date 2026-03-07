@@ -142,8 +142,13 @@ def test_upload_document_creates_version_and_artifact() -> None:
     assert version is not None
     assert version.status == "parsed"
     artifact_types = {artifact.artifact_type for artifact in artifacts}
-    assert artifact_types == {"source", "markdown", "json"}
+    assert artifact_types == {"source", "markdown", "json", "parse_log"}
     assert all(Path(artifact.storage_path).exists() for artifact in artifacts)
+
+    parse_log_artifact = next(artifact for artifact in artifacts if artifact.artifact_type == "parse_log")
+    parse_log = json.loads(Path(parse_log_artifact.storage_path).read_text())
+    assert parse_log["parser"] == "pdf_fallback"
+    assert parse_log["transitions"] == ["uploaded", "parsing", "parsed"]
 
 
 def test_upload_rejects_unsupported_file_extension() -> None:
@@ -214,18 +219,79 @@ def test_upload_docx_creates_markdown_and_json_artifacts_with_anchors() -> None:
     assert version is not None
     assert version.status == "parsed"
     artifact_types = {artifact.artifact_type for artifact in artifacts}
-    assert artifact_types == {"source", "markdown", "json"}
+    assert artifact_types == {"source", "markdown", "json", "parse_log"}
 
     markdown_artifact = next(artifact for artifact in artifacts if artifact.artifact_type == "markdown")
     json_artifact = next(artifact for artifact in artifacts if artifact.artifact_type == "json")
+    parse_log_artifact = next(artifact for artifact in artifacts if artifact.artifact_type == "parse_log")
     markdown_text = Path(markdown_artifact.storage_path).read_text()
     parsed_payload = json.loads(Path(json_artifact.storage_path).read_text())
+    parse_log = json.loads(Path(parse_log_artifact.storage_path).read_text())
 
     assert "# 第一章 项目概况" in markdown_text
     assert "# 第二章 技术方案" in markdown_text
     assert parsed_payload["sections"][0]["title"] == "第一章 项目概况"
     assert parsed_payload["sections"][0]["anchor"] == "section-1"
     assert parsed_payload["sections"][1]["title"] == "第二章 技术方案"
+    assert parse_log["parser"] == "docx_ooxml"
+    assert parse_log["transitions"] == ["uploaded", "parsing", "parsed"]
+
+
+def test_upload_doc_normalizes_to_docx_then_parses() -> None:
+    client = TestClient(app)
+    token = _login(client, "project_manager@example.com", "manager123456")
+
+    project_response = client.post(
+        "/api/v1/projects",
+        json={"name": "Legacy Doc Upload Project"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert project_response.status_code == 201
+    project_id = project_response.json()["id"]
+
+    doc_payload = _build_minimal_docx(
+        ("Heading1", "第一章 施工组织设计"),
+        ("Normal", "兼容旧版 doc 文件。"),
+    )
+    uploaded = client.post(
+        f"/api/v1/projects/{project_id}/documents/upload",
+        data={"document_type": "proposal"},
+        files={"file": ("legacy-proposal.doc", doc_payload, "application/msword")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert uploaded.status_code == 201
+    payload = uploaded.json()
+
+    with SessionLocal() as db:
+        version = db.scalar(
+            select(DocumentVersion).where(DocumentVersion.document_id == payload["id"])
+        )
+        artifacts = list(
+            db.scalars(
+                select(DocumentArtifact).where(DocumentArtifact.document_version_id == version.id)
+            )
+        )
+
+    assert version is not None
+    assert version.status == "parsed"
+
+    artifact_types = {artifact.artifact_type for artifact in artifacts}
+    assert artifact_types == {"source", "normalized_source", "markdown", "json", "parse_log"}
+
+    normalized_artifact = next(
+        artifact for artifact in artifacts if artifact.artifact_type == "normalized_source"
+    )
+    parse_log_artifact = next(artifact for artifact in artifacts if artifact.artifact_type == "parse_log")
+    parsed_payload = json.loads(
+        Path(next(artifact for artifact in artifacts if artifact.artifact_type == "json").storage_path).read_text()
+    )
+    parse_log = json.loads(Path(parse_log_artifact.storage_path).read_text())
+
+    assert normalized_artifact.storage_path.endswith(".docx")
+    assert Path(normalized_artifact.storage_path).exists()
+    assert parsed_payload["document"]["normalized_from"] == "doc"
+    assert parse_log["parser"] == "docx_ooxml"
+    assert parse_log["transitions"] == ["uploaded", "normalizing", "normalized", "parsing", "parsed"]
 
 
 def test_project_manager_can_add_member_and_member_can_view_project() -> None:

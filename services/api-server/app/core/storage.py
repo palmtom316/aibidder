@@ -5,7 +5,7 @@ from fastapi import UploadFile
 
 from app.core.config import settings
 
-ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx"}
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".doc"}
 
 
 def validate_upload(filename: str) -> None:
@@ -38,4 +38,20 @@ def save_generated_artifact(
 
     target_path = target_dir / f"{artifact_type}{extension}"
     target_path.write_text(content, encoding="utf-8")
+    return str(target_path.resolve())
+
+
+def save_binary_artifact(
+    project_id: int,
+    document_id: int,
+    version_no: int,
+    artifact_type: str,
+    payload: bytes,
+    extension: str,
+) -> str:
+    target_dir = Path(settings.storage_root) / f"project-{project_id}" / f"document-{document_id}" / f"v{version_no}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    target_path = target_dir / f"{artifact_type}{extension}"
+    target_path.write_bytes(payload)
     return str(target_path.resolve())
