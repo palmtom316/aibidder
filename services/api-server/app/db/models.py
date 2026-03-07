@@ -89,6 +89,27 @@ class DocumentArtifact(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class EvidenceUnit(Base):
+    __tablename__ = "evidence_units"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), nullable=False, index=True)
+    document_version_id: Mapped[int] = mapped_column(ForeignKey("document_versions.id"), nullable=False, index=True)
+    document_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    unit_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    section_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    section_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    anchor: Mapped[str] = mapped_column(String(128), nullable=False)
+    page_start: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    page_end: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    fts_text: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class HistoricalBidDocument(Base):
     __tablename__ = "historical_bid_documents"
 

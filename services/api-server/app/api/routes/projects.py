@@ -9,6 +9,7 @@ from app.db.models import (
     Document,
     DocumentArtifact,
     DocumentVersion,
+    EvidenceUnit,
     HistoricalBidDocument,
     HistoricalBidSection,
     HistoricalRiskMark,
@@ -20,6 +21,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.schemas.auth import UserIdentity
+from app.schemas.evidence import EvidenceSearchResult, EvidenceUnitResponse
 from app.schemas.project import (
     DocumentCreate,
     DocumentResponse,
@@ -32,6 +34,8 @@ from app.schemas.writing_runtime import (
     HistoricalLeakageVerificationRequest,
     HistoricalLeakageVerificationResponse,
 )
+from app.services.evidence_search import search_evidence_units
+from app.services.evidence_unit_builder import list_evidence_units_for_document, rebuild_evidence_units_for_document
 from app.services.historical_leakage_checker import verify_historical_leakage
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
@@ -212,6 +216,18 @@ def create_document(
     return document
 
 
+def _get_project_document(project_id: int, document_id: int, db: Session) -> Document:
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            Document.project_id == project_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    return document
+
+
 @router.get("/{project_id}/documents", response_model=list[DocumentResponse])
 def list_documents(
     project_id: int,
@@ -222,6 +238,69 @@ def list_documents(
 
     stmt = select(Document).where(Document.project_id == project_id).order_by(Document.id.asc())
     return list(db.scalars(stmt))
+
+
+@router.post(
+    "/{project_id}/documents/{document_id}/rebuild-evidence-units",
+    response_model=list[EvidenceUnitResponse],
+)
+def rebuild_document_evidence_units(
+    project_id: int,
+    document_id: int,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EvidenceUnit]:
+    _get_project_for_member(project_id, current_user, db)
+    document = _get_project_document(project_id, document_id, db)
+    try:
+        return rebuild_evidence_units_for_document(db, document)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{project_id}/documents/{document_id}/evidence-units",
+    response_model=list[EvidenceUnitResponse],
+)
+def list_document_evidence_units(
+    project_id: int,
+    document_id: int,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EvidenceUnit]:
+    _get_project_for_member(project_id, current_user, db)
+    _get_project_document(project_id, document_id, db)
+    return list_evidence_units_for_document(db, document_id)
+
+
+@router.get(
+    "/{project_id}/evidence/search",
+    response_model=list[EvidenceSearchResult],
+)
+def search_project_evidence(
+    project_id: int,
+    q: str,
+    document_type: str | None = None,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EvidenceSearchResult]:
+    _get_project_for_member(project_id, current_user, db)
+    rows = search_evidence_units(db, project_id=project_id, q=q, document_type=document_type)
+    return [
+        EvidenceSearchResult(
+            id=evidence_unit.id,
+            document_id=evidence_unit.document_id,
+            filename=filename,
+            document_type=evidence_unit.document_type,
+            unit_type=evidence_unit.unit_type,
+            section_title=evidence_unit.section_title,
+            anchor=evidence_unit.anchor,
+            page_start=evidence_unit.page_start,
+            page_end=evidence_unit.page_end,
+            content=evidence_unit.content,
+        )
+        for evidence_unit, filename in rows
+    ]
 
 
 @router.post(
