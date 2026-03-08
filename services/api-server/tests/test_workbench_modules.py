@@ -1,5 +1,9 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
 
+from app.db.models import KnowledgeBaseEntry
+from app.db.session import SessionLocal
 from app.main import app
 
 
@@ -66,12 +70,124 @@ def test_workbench_overview_exposes_all_product_modules() -> None:
     ]
     assert [module["title"] for module in payload["modules"]] == [
         "投标资料库",
-        "招标解析",
+        "标书分析",
         "标书生成",
-        "标书检测",
+        "标书评审",
         "排版定稿",
         "标书管理",
     ]
+
+
+def test_library_entries_support_category_and_keyword_filters() -> None:
+    client = TestClient(app)
+    token = _login()
+    project = _create_project(client, token, name="Library Filter Project")
+    document = _create_document(client, token, project["id"], filename="资料库.docx", document_type="proposal")
+
+    for payload in (
+        {
+            "project_id": project["id"],
+            "source_document_id": document["id"],
+            "category": "excellent_bid",
+            "title": "2025 输变电优秀标书",
+            "owner_name": "市场经营中心",
+        },
+        {
+            "project_id": project["id"],
+            "source_document_id": document["id"],
+            "category": "company_qualification",
+            "title": "电力总承包一级资质",
+            "owner_name": "资质管理部",
+        },
+        {
+            "project_id": project["id"],
+            "source_document_id": document["id"],
+            "category": "personnel_qualification",
+            "title": "一级建造师证书",
+            "owner_name": "人力资源部",
+        },
+    ):
+        response = client.post(
+            "/api/v1/workbench/library/entries",
+            json=payload,
+            headers=_auth_headers(token),
+        )
+        assert response.status_code == 201
+
+    by_category = client.get(
+        f"/api/v1/workbench/library/entries?project_id={project['id']}&category=company_qualification",
+        headers=_auth_headers(token),
+    )
+    assert by_category.status_code == 200
+    assert [row["title"] for row in by_category.json()] == ["电力总承包一级资质"]
+
+    by_keyword = client.get(
+        f"/api/v1/workbench/library/entries?project_id={project['id']}&q=资质",
+        headers=_auth_headers(token),
+    )
+    assert by_keyword.status_code == 200
+    assert {row["title"] for row in by_keyword.json()} == {"电力总承包一级资质"}
+
+
+def test_library_entries_support_created_at_range_filters() -> None:
+    client = TestClient(app)
+    token = _login()
+    project = _create_project(client, token, name="Library Date Range Project")
+    document = _create_document(client, token, project["id"], filename="日期筛选.docx", document_type="proposal")
+
+    created_entry_ids: list[int] = []
+    for payload in (
+        {
+            "project_id": project["id"],
+            "source_document_id": document["id"],
+            "category": "excellent_bid",
+            "title": "近期开标项目",
+            "owner_name": "市场经营中心",
+        },
+        {
+            "project_id": project["id"],
+            "source_document_id": document["id"],
+            "category": "historical_bid",
+            "title": "往年历史标书",
+            "owner_name": "档案室",
+        },
+    ):
+        response = client.post(
+            "/api/v1/workbench/library/entries",
+            json=payload,
+            headers=_auth_headers(token),
+        )
+        assert response.status_code == 201
+        created_entry_ids.append(response.json()["id"])
+
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        newest = db.get(KnowledgeBaseEntry, created_entry_ids[0])
+        oldest = db.get(KnowledgeBaseEntry, created_entry_ids[1])
+        assert newest is not None
+        assert oldest is not None
+        newest.created_at = now
+        oldest.created_at = now - timedelta(days=10)
+        db.commit()
+
+    created_from = (now - timedelta(days=2)).isoformat()
+    created_to = (now - timedelta(days=2)).isoformat()
+
+    recent_only = client.get(
+        "/api/v1/workbench/library/entries",
+        params={"project_id": project["id"], "created_from": created_from},
+        headers=_auth_headers(token),
+    )
+    assert recent_only.status_code == 200
+    assert [row["title"] for row in recent_only.json()] == ["近期开标项目"]
+
+    older_only = client.get(
+        "/api/v1/workbench/library/entries",
+        params={"project_id": project["id"], "created_to": created_to},
+        headers=_auth_headers(token),
+    )
+    assert older_only.status_code == 200
+    assert [row["title"] for row in older_only.json()] == ["往年历史标书"]
 
 
 def test_workbench_module_records_can_be_created_and_counted() -> None:

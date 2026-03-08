@@ -1,11 +1,13 @@
+from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user, require_roles
 from app.api.deps.pagination import PaginationParams, pagination_params
 from app.api.pagination import paginate_scalars
-from app.core.document_ingestion import ingest_document
+from app.core.config import settings
 from app.core.storage import save_upload, validate_upload
 from app.db.models import (
     Document,
@@ -38,11 +40,8 @@ from app.schemas.writing_runtime import (
 )
 from app.services.audit import record_audit_event
 from app.services.evidence_search import search_evidence_units
-from app.services.evidence_unit_builder import (
-    list_evidence_units_for_document,
-    rebuild_evidence_units_for_document,
-    supports_evidence_units,
-)
+from app.services.document_ingestion_tasks import dispatch_document_ingestion_task, finalize_document_ingestion
+from app.services.evidence_unit_builder import list_evidence_units_for_document, rebuild_evidence_units_for_document
 from app.services.historical_leakage_checker import verify_historical_leakage
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
@@ -445,26 +444,17 @@ def upload_document(
         )
     )
 
-    ingestion_result = ingest_document(
-        project_id=project_id,
-        document_id=document.id,
-        version_no=document_version.version_no,
-        source_path=storage_path,
-        filename=file.filename or "upload",
-    )
-    for artifact in ingestion_result.artifacts:
-        db.add(
-            DocumentArtifact(
-                document_version_id=document_version.id,
-                artifact_type=artifact.artifact_type,
-                storage_path=artifact.storage_path,
-            )
+    if settings.async_document_ingestion and dispatch_document_ingestion_task(document_version_id=document_version.id):
+        document_version.status = "queued"
+        ingestion_status = "queued"
+    else:
+        ingestion_status = finalize_document_ingestion(
+            db,
+            document=document,
+            document_version=document_version,
+            source_path=storage_path,
+            filename=file.filename or "upload",
         )
-    document_version.status = ingestion_result.status
-
-    if ingestion_result.status == "parsed" and supports_evidence_units(document.document_type):
-        db.flush()
-        rebuild_evidence_units_for_document(db, document)
 
     record_audit_event(
         db,
@@ -479,13 +469,40 @@ def upload_document(
         detail={
             "filename": file.filename or "upload",
             "document_type": document_type,
-            "status": ingestion_result.status,
+            "status": ingestion_status,
         },
     )
 
     db.commit()
     db.refresh(document)
     return document
+
+
+@router.get("/{project_id}/documents/{document_id}/artifacts/{artifact_type}")
+def download_document_artifact(
+    project_id: int,
+    document_id: int,
+    artifact_type: str,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _get_project_for_member(project_id, current_user, db)
+    document = _get_project_document(project_id, document_id, db)
+
+    artifact = db.scalar(
+        select(DocumentArtifact)
+        .join(DocumentVersion, DocumentVersion.id == DocumentArtifact.document_version_id)
+        .where(
+            DocumentVersion.document_id == document.id,
+            DocumentArtifact.artifact_type == artifact_type,
+        )
+        .order_by(DocumentVersion.version_no.desc(), DocumentArtifact.id.desc())
+    )
+    if artifact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
+
+    filename = Path(artifact.storage_path).name
+    return FileResponse(path=artifact.storage_path, filename=filename)
 
 
 def _load_history_candidate_terms(

@@ -180,6 +180,54 @@ export type KnowledgeBaseEntry = {
   created_at: string;
 };
 
+export type KnowledgeBaseEntryFilters = {
+  category?: string;
+  q?: string;
+  created_from?: string;
+  created_to?: string;
+};
+
+export type Qualification = {
+  id: number;
+  organization_id: number;
+  qualification_name: string;
+  qualification_level: string;
+  certificate_no: string;
+  valid_until: string;
+  metadata_json: string;
+  created_at: string;
+};
+
+export type PersonnelAsset = {
+  id: number;
+  organization_id: number;
+  full_name: string;
+  role_title: string;
+  certificate_no: string;
+  metadata_json: string;
+  created_at: string;
+};
+
+export type EquipmentAsset = {
+  id: number;
+  organization_id: number;
+  equipment_name: string;
+  model_no: string;
+  quantity: number;
+  metadata_json: string;
+  created_at: string;
+};
+
+export type ProjectCredential = {
+  id: number;
+  organization_id: number;
+  project_name: string;
+  credential_type: string;
+  owner_name: string;
+  metadata_json: string;
+  created_at: string;
+};
+
 export type DecompositionRun = {
   id: number;
   organization_id: number;
@@ -191,6 +239,21 @@ export type DecompositionRun = {
   summary_json: string;
   created_by_user_id: number;
   created_at: string;
+};
+
+export type GeneratedSection = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  source_document_id: number | null;
+  section_key: string;
+  title: string;
+  status: string;
+  draft_text: string;
+  evidence_summary_json: string;
+  created_by_user_id: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type GenerationJob = {
@@ -219,6 +282,21 @@ export type ReviewRun = {
   created_at: string;
 };
 
+export type ReviewIssue = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  review_run_id: number;
+  generated_section_id: number | null;
+  severity: string;
+  category: string;
+  title: string;
+  detail: string;
+  is_blocking: boolean;
+  status: string;
+  created_at: string;
+};
+
 export type LayoutJob = {
   id: number;
   organization_id: number;
@@ -229,6 +307,26 @@ export type LayoutJob = {
   status: string;
   created_by_user_id: number;
   created_at: string;
+};
+
+export type RenderedOutput = {
+  id: number;
+  organization_id: number;
+  project_id: number;
+  source_document_id: number | null;
+  layout_job_id: number | null;
+  output_type: string;
+  storage_path: string;
+  version_tag: string;
+  created_by_user_id: number;
+  created_at: string;
+};
+
+export type SubmissionRecordFilters = {
+  status?: string;
+  q?: string;
+  created_from?: string;
+  created_to?: string;
 };
 
 export type SubmissionRecord = {
@@ -244,6 +342,34 @@ export type SubmissionRecord = {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8080";
+
+async function apiBinaryRequest(
+  path: string,
+  init: RequestInit = {},
+  token?: string | null,
+): Promise<Blob> {
+  const headers = new Headers(init.headers ?? {});
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+  });
+  if (!response.ok) {
+    let message = response.statusText || "Request failed";
+    try {
+      const data = await response.json();
+      if (data && typeof data === "object" && "detail" in data && typeof data.detail === "string") {
+        message = data.detail;
+      }
+    } catch {}
+    throw new ApiError(message, response.status);
+  }
+
+  return response.blob();
+}
 
 async function apiRequest<T>(
   path: string,
@@ -475,10 +601,26 @@ export function getWorkbenchOverview(token: string, projectId?: number) {
   return apiRequest<WorkbenchOverview>(`/api/v1/workbench/overview${query ? `?${query}` : ""}`, {}, token);
 }
 
-export function listKnowledgeBaseEntries(token: string, projectId?: number) {
+export function listKnowledgeBaseEntries(
+  token: string,
+  projectId?: number,
+  filters: KnowledgeBaseEntryFilters = {},
+) {
   const params = new URLSearchParams();
   if (typeof projectId === "number") {
     params.set("project_id", String(projectId));
+  }
+  if (filters.category) {
+    params.set("category", filters.category);
+  }
+  if (filters.q) {
+    params.set("q", filters.q);
+  }
+  if (filters.created_from) {
+    params.set("created_from", filters.created_from);
+  }
+  if (filters.created_to) {
+    params.set("created_to", filters.created_to);
   }
   const query = params.toString();
   return apiRequest<KnowledgeBaseEntry[]>(
@@ -513,6 +655,140 @@ export function runKnowledgeBaseCheck(token: string, entryId: number) {
     `/api/v1/workbench/library/entries/${entryId}/run-check`,
     {
       method: "POST",
+    },
+    token,
+  );
+}
+
+
+export function listQualifications(token: string) {
+  return apiRequest<Qualification[]>("/api/v1/workbench/library/qualifications", {}, token);
+}
+
+export function createQualification(
+  token: string,
+  payload: {
+    qualification_name: string;
+    qualification_level?: string;
+    certificate_no?: string;
+    valid_until?: string;
+    metadata_json?: string;
+  },
+) {
+  return apiRequest<Qualification>(
+    "/api/v1/workbench/library/qualifications",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function deleteQualification(token: string, qualificationId: number) {
+  return apiRequest<void>(
+    `/api/v1/workbench/library/qualifications/${qualificationId}`,
+    {
+      method: "DELETE",
+    },
+    token,
+  );
+}
+
+export function listPersonnelAssets(token: string) {
+  return apiRequest<PersonnelAsset[]>("/api/v1/workbench/library/personnel-assets", {}, token);
+}
+
+export function createPersonnelAsset(
+  token: string,
+  payload: {
+    full_name: string;
+    role_title?: string;
+    certificate_no?: string;
+    metadata_json?: string;
+  },
+) {
+  return apiRequest<PersonnelAsset>(
+    "/api/v1/workbench/library/personnel-assets",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function deletePersonnelAsset(token: string, personnelAssetId: number) {
+  return apiRequest<void>(
+    `/api/v1/workbench/library/personnel-assets/${personnelAssetId}`,
+    {
+      method: "DELETE",
+    },
+    token,
+  );
+}
+
+export function listEquipmentAssets(token: string) {
+  return apiRequest<EquipmentAsset[]>("/api/v1/workbench/library/equipment-assets", {}, token);
+}
+
+export function createEquipmentAsset(
+  token: string,
+  payload: {
+    equipment_name: string;
+    model_no?: string;
+    quantity?: number;
+    metadata_json?: string;
+  },
+) {
+  return apiRequest<EquipmentAsset>(
+    "/api/v1/workbench/library/equipment-assets",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function deleteEquipmentAsset(token: string, equipmentAssetId: number) {
+  return apiRequest<void>(
+    `/api/v1/workbench/library/equipment-assets/${equipmentAssetId}`,
+    {
+      method: "DELETE",
+    },
+    token,
+  );
+}
+
+export function listProjectCredentials(token: string) {
+  return apiRequest<ProjectCredential[]>("/api/v1/workbench/library/project-credentials", {}, token);
+}
+
+export function createProjectCredential(
+  token: string,
+  payload: {
+    project_name: string;
+    credential_type?: string;
+    owner_name?: string;
+    metadata_json?: string;
+  },
+) {
+  return apiRequest<ProjectCredential>(
+    "/api/v1/workbench/library/project-credentials",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function deleteProjectCredential(token: string, projectCredentialId: number) {
+  return apiRequest<void>(
+    `/api/v1/workbench/library/project-credentials/${projectCredentialId}`,
+    {
+      method: "DELETE",
     },
     token,
   );
@@ -581,6 +857,17 @@ export function createGenerationJob(
   );
 }
 
+
+export function listGeneratedSections(token: string, generationJobId: number) {
+  return apiRequest<GeneratedSection[]>(`/api/v1/workbench/generation/jobs/${generationJobId}/sections`, {}, token);
+}
+
+export function approveGenerationOutline(token: string, generationJobId: number) {
+  return apiRequest<GenerationJob>(`/api/v1/workbench/generation/jobs/${generationJobId}/approve-outline`, {
+    method: "POST",
+  }, token);
+}
+
 export function listReviewRuns(token: string, projectId?: number) {
   const params = new URLSearchParams();
   if (typeof projectId === "number") {
@@ -611,6 +898,23 @@ export function createReviewRun(
     },
     token,
   );
+}
+
+
+export function listReviewIssues(token: string, reviewRunId: number) {
+  return apiRequest<ReviewIssue[]>(`/api/v1/workbench/review/runs/${reviewRunId}/issues`, {}, token);
+}
+
+export function remediateReviewIssue(token: string, issueId: number) {
+  return apiRequest<GeneratedSection>(`/api/v1/workbench/review/issues/${issueId}/remediate`, {
+    method: "POST",
+  }, token);
+}
+
+export function confirmReviewRunPass(token: string, runId: number) {
+  return apiRequest<ReviewRun>(`/api/v1/workbench/review/runs/${runId}/confirm-pass`, {
+    method: "POST",
+  }, token);
 }
 
 export function listLayoutJobs(token: string, projectId?: number) {
@@ -645,10 +949,35 @@ export function createLayoutJob(
   );
 }
 
-export function listSubmissionRecords(token: string, projectId?: number) {
+
+export function listRenderedOutputs(token: string, layoutJobId: number) {
+  return apiRequest<RenderedOutput[]>(`/api/v1/workbench/layout/jobs/${layoutJobId}/outputs`, {}, token);
+}
+
+export function downloadRenderedOutput(token: string, outputId: number) {
+  return apiBinaryRequest(`/api/v1/workbench/layout/outputs/${outputId}/download`, {}, token);
+}
+
+export function downloadDocumentArtifact(token: string, projectId: number, documentId: number, artifactType: string) {
+  return apiBinaryRequest(`/api/v1/projects/${projectId}/documents/${documentId}/artifacts/${artifactType}`, {}, token);
+}
+
+export function listSubmissionRecords(token: string, projectId?: number, filters: SubmissionRecordFilters = {}) {
   const params = new URLSearchParams();
   if (typeof projectId === "number") {
     params.set("project_id", String(projectId));
+  }
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+  if (filters.q) {
+    params.set("q", filters.q);
+  }
+  if (filters.created_from) {
+    params.set("created_from", filters.created_from);
+  }
+  if (filters.created_to) {
+    params.set("created_to", filters.created_to);
   }
   const query = params.toString();
   return apiRequest<SubmissionRecord[]>(
@@ -672,6 +1001,17 @@ export function createSubmissionRecord(
     {
       method: "POST",
       body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+
+export function feedSubmissionRecordToLibrary(token: string, submissionRecordId: number) {
+  return apiRequest<KnowledgeBaseEntry>(
+    `/api/v1/workbench/submission-records/${submissionRecordId}/feed-to-library`,
+    {
+      method: "POST",
     },
     token,
   );

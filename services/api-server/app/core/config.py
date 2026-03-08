@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     adjudicator_role_model: str = "deepseek-ai/DeepSeek-R1"
 
     async_document_ingestion: bool = False
+    async_workbench_pipelines: bool = False
     celery_broker_url: str = "redis://redis:6379/0"
     celery_result_backend: str = "redis://redis:6379/1"
 

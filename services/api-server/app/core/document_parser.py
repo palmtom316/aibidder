@@ -197,7 +197,52 @@ def _append_text_to_section(
 
 
 def _parse_pdf(source_path: str, filename: str) -> ParsedDocument | None:
-    return _parse_pdf_with_pypdf(source_path, filename) or _parse_pdf_fallback(source_path, filename)
+    return (
+        _parse_pdf_with_pymupdf(source_path, filename)
+        or _parse_pdf_with_pypdf(source_path, filename)
+        or _parse_pdf_fallback(source_path, filename)
+    )
+
+
+def _parse_pdf_with_pymupdf(source_path: str, filename: str) -> ParsedDocument | None:
+    try:
+        import fitz
+    except ImportError:
+        return None
+
+    document = fitz.open(source_path)
+    page_sections: list[dict] = []
+    markdown_pages: list[str] = []
+    for index, page in enumerate(document, start=1):
+        text = page.get_text("text").strip()
+        if not text:
+            continue
+        markdown_pages.append(text)
+        page_sections.append(
+            {
+                "title": f"Page {index}",
+                "level": 1,
+                "anchor": f"section-{index}",
+                "page": index,
+                "content": text,
+            }
+        )
+
+    if not page_sections:
+        return None
+
+    return ParsedDocument(
+        parser_name="pdf_pymupdf",
+        markdown="\n\n".join(markdown_pages),
+        structured_payload={
+            "document": {
+                "format": "pdf",
+                "filename": filename,
+                "normalized_from": None,
+            },
+            "sections": page_sections,
+        },
+    )
 
 
 def _parse_pdf_with_pypdf(source_path: str, filename: str) -> ParsedDocument | None:
