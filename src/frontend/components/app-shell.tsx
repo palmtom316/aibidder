@@ -76,6 +76,8 @@ export function AppShell({
     reminderLabel,
   });
 
+  const hasToolbar = Boolean(toolbar) || Boolean(copilotTrigger);
+
   return (
     <div className="console-shell" data-current-view={currentView}>
       {sidebar}
@@ -86,10 +88,7 @@ export function AppShell({
             <h1>{title}</h1>
             {subtitle ? <p className="workspace-subtitle">{subtitle}</p> : null}
           </div>
-          <div className="workspace-toolbar">
-            {toolbar}
-            {copilotTrigger}
-          </div>
+          {hasToolbar ? <div className="workspace-toolbar">{toolbar}{copilotTrigger}</div> : null}
         </header>
 
         {showProjectContext && resolvedProjectContext ? <ProjectContextBar context={resolvedProjectContext} /> : null}

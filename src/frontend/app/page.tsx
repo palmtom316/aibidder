@@ -112,13 +112,26 @@ import { formatLibraryCategory, getResumeCardState } from "../components/workspa
 import { shouldCollapseCopilotOnInteraction, isNarrowViewport } from "../lib/copilot-visibility";
 import { clearStoredToken, getStorageItem, getStoredToken, setStorageItem, setStoredToken } from "../lib/session";
 
-type RuntimeFormState = {
+type RuntimeRole = keyof RuntimeSettings["default_models"];
+
+type RuntimeRoleConfig = {
+  apiBaseUrl: string;
+  apiKey: string;
+  model: string;
+};
+
+type RuntimePlatformConfig = {
   provider: string;
   apiBaseUrl: string;
   apiKey: string;
-  selectedRole: keyof RuntimeSettings["default_models"];
-  defaultModels: RuntimeSettings["default_models"];
 };
+
+type RuntimeFormState = {
+  platformConfig: RuntimePlatformConfig;
+  roleConfigs: Record<RuntimeRole, RuntimeRoleConfig>;
+};
+
+const DEFAULT_RUNTIME_API_BASE_URL = "https://api.siliconflow.cn/v1";
 
 const EMPTY_MODELS: RuntimeSettings["default_models"] = {
   ocr_role: "deepseek-ai/DeepSeek-OCR",
@@ -128,6 +141,46 @@ const EMPTY_MODELS: RuntimeSettings["default_models"] = {
   reviewer_role: "deepseek-ai/DeepSeek-R1",
   adjudicator_role: "deepseek-ai/DeepSeek-R1",
 };
+
+
+function buildRuntimeRoleConfigs(
+  models: RuntimeSettings["default_models"],
+  apiBaseUrl: string,
+  previous?: Record<RuntimeRole, RuntimeRoleConfig>,
+): Record<RuntimeRole, RuntimeRoleConfig> {
+  return {
+    ocr_role: {
+      apiBaseUrl: previous?.ocr_role.apiBaseUrl ?? apiBaseUrl,
+      apiKey: previous?.ocr_role.apiKey ?? "",
+      model: models.ocr_role,
+    },
+    decomposition_navigator_role: {
+      apiBaseUrl: previous?.decomposition_navigator_role.apiBaseUrl ?? apiBaseUrl,
+      apiKey: previous?.decomposition_navigator_role.apiKey ?? "",
+      model: models.decomposition_navigator_role,
+    },
+    decomposition_extractor_role: {
+      apiBaseUrl: previous?.decomposition_extractor_role.apiBaseUrl ?? apiBaseUrl,
+      apiKey: previous?.decomposition_extractor_role.apiKey ?? "",
+      model: models.decomposition_extractor_role,
+    },
+    writer_role: {
+      apiBaseUrl: previous?.writer_role.apiBaseUrl ?? apiBaseUrl,
+      apiKey: previous?.writer_role.apiKey ?? "",
+      model: models.writer_role,
+    },
+    reviewer_role: {
+      apiBaseUrl: previous?.reviewer_role.apiBaseUrl ?? apiBaseUrl,
+      apiKey: previous?.reviewer_role.apiKey ?? "",
+      model: models.reviewer_role,
+    },
+    adjudicator_role: {
+      apiBaseUrl: previous?.adjudicator_role.apiBaseUrl ?? apiBaseUrl,
+      apiKey: previous?.adjudicator_role.apiKey ?? "",
+      model: models.adjudicator_role,
+    },
+  };
+}
 
 type CopilotMessage = {
   id: string;
@@ -147,13 +200,16 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
   const [runtimeSettings, setRuntimeSettings] = useState<RuntimeSettings | null>(null);
   const [runtimeForm, setRuntimeForm] = useState<RuntimeFormState>({
-    provider: "openai_compatible",
-    apiBaseUrl: "https://api.siliconflow.cn/v1",
-    apiKey: "",
-    selectedRole: "writer_role",
-    defaultModels: EMPTY_MODELS,
+    platformConfig: {
+      provider: "硅基流动",
+      apiBaseUrl: DEFAULT_RUNTIME_API_BASE_URL,
+      apiKey: "",
+    },
+    roleConfigs: buildRuntimeRoleConfigs(EMPTY_MODELS, DEFAULT_RUNTIME_API_BASE_URL),
   });
   const [connectivityResult, setConnectivityResult] = useState<RuntimeConnectivityResult | null>(null);
+  const [connectivityRole, setConnectivityRole] = useState<RuntimeRole | "platform" | null>(null);
+  const [checkingRole, setCheckingRole] = useState<RuntimeRole | "platform" | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -298,6 +354,22 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     [activeModule],
   );
 
+  const sidebarUserName = useMemo(() => {
+    const identity = loginEmail.trim();
+    if (!identity) {
+      return token ? "AIBidder User" : "访客";
+    }
+
+    const localPart = identity.split("@")[0] ?? identity;
+    return localPart
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(" ");
+  }, [loginEmail, token]);
+
+  const sidebarUserAccountLabel = token ? loginEmail.trim() : "请先登录";
+
   function buildLibraryFilters(): KnowledgeBaseEntryFilters {
     return {
       category: libraryFilterCategory !== "all" ? libraryFilterCategory : undefined,
@@ -378,10 +450,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   }, [activeModule, selectedProjectId]);
 
   useEffect(() => {
-    if (!copilotOpen) {
-      return;
-    }
-
     const onPointerDown = (event: PointerEvent) => {
       if (shouldCollapseCopilotOnInteraction({ open: copilotOpen, narrowViewport: isNarrowViewport(window), event })) {
         setCopilotOpen(false);
@@ -389,8 +457,23 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isEditableTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable);
+
       if (event.key === "Escape") {
         setCopilotOpen(false);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
+        event.preventDefault();
+        if (!isEditableTarget || copilotOpen) {
+          setCopilotOpen((current) => !current);
+        }
       }
     };
 
@@ -541,10 +624,16 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       ]);
       setRuntimeSettings(settingsPayload);
       setRuntimeForm((current) => ({
-        ...current,
-        provider: settingsPayload.provider,
-        apiBaseUrl: settingsPayload.api_base_url ?? "https://api.siliconflow.cn/v1",
-        defaultModels: settingsPayload.default_models,
+        platformConfig: {
+          provider: settingsPayload.provider,
+          apiBaseUrl: settingsPayload.api_base_url ?? DEFAULT_RUNTIME_API_BASE_URL,
+          apiKey: current.platformConfig.apiKey,
+        },
+        roleConfigs: buildRuntimeRoleConfigs(
+          settingsPayload.default_models,
+          settingsPayload.api_base_url ?? DEFAULT_RUNTIME_API_BASE_URL,
+          current.roleConfigs,
+        ),
       }));
       setProjects(projectRows);
       setHistoricalBids(historicalRows);
@@ -1360,24 +1449,41 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     }
   }
 
-  async function handleConnectivityCheck(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !runtimeForm.apiKey.trim()) {
+  async function handleConnectivityCheck(role: RuntimeRole | "platform") {
+    if (!token) {
+      return;
+    }
+
+    const provider = runtimeForm.platformConfig.provider.trim();
+    const platformApiBaseUrl = runtimeForm.platformConfig.apiBaseUrl.trim();
+    const platformApiKey = runtimeForm.platformConfig.apiKey.trim();
+    const roleConfig = role === "platform" ? null : runtimeForm.roleConfigs[role];
+    const apiBaseUrl = role === "platform" ? platformApiBaseUrl : roleConfig?.apiBaseUrl.trim() || platformApiBaseUrl;
+    const apiKey = role === "platform" ? platformApiKey : roleConfig?.apiKey.trim() || platformApiKey;
+    const model = role === "platform" ? runtimeForm.roleConfigs.writer_role.model.trim() : roleConfig?.model.trim() ?? "";
+
+    if (!provider || !apiBaseUrl || !apiKey || !model) {
+      setMessage("请填写 AI 平台或角色自己的 API / URL，并填写模型名称。");
       return;
     }
     try {
       setBusyLabel("正在验证模型连通性");
+      setCheckingRole(role);
       const result = await runConnectivityCheck(token, {
-        provider: runtimeForm.provider,
-        api_base_url: runtimeForm.apiBaseUrl,
-        api_key: runtimeForm.apiKey.trim(),
-        model: runtimeForm.defaultModels[runtimeForm.selectedRole],
+        provider,
+        api_base_url: apiBaseUrl,
+        api_key: apiKey,
+        model,
       });
+      setConnectivityRole(role);
       setConnectivityResult(result);
       setMessage(result.message);
     } catch (error) {
+      setConnectivityRole(role);
+      setConnectivityResult(null);
       setMessage(readError(error));
     } finally {
+      setCheckingRole(null);
       setBusyLabel("");
     }
   }
@@ -2038,54 +2144,44 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             projects={projects}
             selectedProjectId={selectedProjectId}
             sessionReady={Boolean(token)}
+            userAccountLabel={sidebarUserAccountLabel}
+            userName={sidebarUserName}
           />
         }
         subtitle={activeModuleMeta.hint}
         title={activeModuleMeta.label}
-        toolbar={
-          <>
-            <div className="context-pill">
-              <span className="brand-point brand-point-inline" />
-              <span>{selectedProject ? selectedProject.name : "未选择项目"}</span>
-            </div>
-            <button className="ghost-button" onClick={() => setSettingsOpen(true)} type="button">
-              设置
-            </button>
-            <button className="primary-button copilot-trigger" onClick={() => setCopilotOpen(true)} type="button">
-              打开助手
-            </button>
-          </>
-        }
       >
         {token ? renderActiveModule() : renderLoginWorkspace()}
       </AppShell>
 
       <SettingsDrawer
+        checkingRole={checkingRole}
         connectivityResult={connectivityResult}
+        connectivityRole={connectivityRole}
         disabled={!token || Boolean(busyLabel)}
+        onCheckRole={handleConnectivityCheck}
         onClose={() => setSettingsOpen(false)}
-        onFieldChange={(field, value) =>
+        onPlatformFieldChange={(field, value) =>
           setRuntimeForm((current) => ({
             ...current,
-            [field]: value,
-          }))
-        }
-        onModelChange={(role, value) =>
-          setRuntimeForm((current) => ({
-            ...current,
-            defaultModels: {
-              ...current.defaultModels,
-              [role]: value,
+            platformConfig: {
+              ...current.platformConfig,
+              [field]: value,
             },
           }))
         }
-        onSelectedRoleChange={(value) =>
+        onRoleFieldChange={(role, field, value) =>
           setRuntimeForm((current) => ({
             ...current,
-            selectedRole: value,
+            roleConfigs: {
+              ...current.roleConfigs,
+              [role]: {
+                ...current.roleConfigs[role],
+                [field]: value,
+              },
+            },
           }))
         }
-        onSubmit={handleConnectivityCheck}
         open={settingsOpen}
         runtimeForm={runtimeForm}
         runtimeSettings={runtimeSettings}

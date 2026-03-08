@@ -19,6 +19,8 @@ type WorkspaceSidebarProps = {
   sessionReady: boolean;
   busyLabel: string;
   message: string;
+  userName?: string;
+  userAccountLabel?: string;
   onSelectModule: (moduleId: string) => void;
   onSelectProject: (projectId: number | null) => void;
   onToggleCollapsed: () => void;
@@ -30,17 +32,18 @@ type WorkspaceSidebarProps = {
 type SidebarNavItem = {
   id: string;
   label: string;
-  hint: string;
-  shortLabel: string;
+  kind: "module" | "action";
+  moduleId?: string;
+  icon: "library" | "analysis" | "writing" | "review" | "layout" | "settings";
 };
 
 const NAV_ITEMS: SidebarNavItem[] = [
-  { id: "home", label: "首页", hint: "查看今天先做什么", shortLabel: "首" },
-  { id: "knowledge-library", label: "资料准备", hint: "整理招标文件和企业资料", shortLabel: "资" },
-  { id: "tender-analysis", label: "招标分析", hint: "梳理要求、评分点和风险", shortLabel: "析" },
-  { id: "bid-generation", label: "内容编写", hint: "按章节编写和完善投标内容", shortLabel: "写" },
-  { id: "bid-review", label: "校核定稿", hint: "检查问题并准备最终定稿", shortLabel: "核" },
-  { id: "bid-management", label: "项目归档", hint: "沉淀成果和后续复用资料", shortLabel: "档" },
+  { id: "knowledge-library", label: "投标资料库", kind: "module", moduleId: "knowledge-library", icon: "library" },
+  { id: "tender-analysis", label: "招标解析", kind: "module", moduleId: "tender-analysis", icon: "analysis" },
+  { id: "bid-generation", label: "标书编写", kind: "module", moduleId: "bid-generation", icon: "writing" },
+  { id: "bid-review", label: "标书审核", kind: "module", moduleId: "bid-review", icon: "review" },
+  { id: "layout-finalize", label: "标书排版", kind: "module", moduleId: "layout-finalize", icon: "layout" },
+  { id: "settings", label: "设置", kind: "action", icon: "settings" },
 ];
 
 function isModuleAvailable(modules: ModuleItem[], moduleId: string) {
@@ -49,117 +52,227 @@ function isModuleAvailable(modules: ModuleItem[], moduleId: string) {
 
 function isModuleActive(activeModule: string, moduleId: string) {
   if (moduleId === "bid-review") {
-    return activeModule === "bid-review" || activeModule === "layout-finalize";
+    return activeModule === "bid-review";
   }
 
   return activeModule === moduleId;
+}
+
+function buildUserInitials(userName: string) {
+  const parts = userName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  }
+
+  return userName.slice(0, 2).toUpperCase();
+}
+
+function formatFallbackName(sessionReady: boolean, userName?: string) {
+  if (userName?.trim()) {
+    return userName.trim();
+  }
+
+  return sessionReady ? "AIBidder User" : "访客";
+}
+
+function SidebarGlyph() {
+  return (
+    <svg aria-hidden="true" className="sidebar-brand-glyph" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M12 3.8 13.55 8.45 18.2 10 13.55 11.55 12 16.2 10.45 11.55 5.8 10l4.65-1.55L12 3.8Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+      <path
+        d="M18.1 4.9 18.55 6.25 19.9 6.7 18.55 7.15 18.1 8.5 17.65 7.15 16.3 6.7 17.65 6.25 18.1 4.9Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M18.1 15.5 18.5 16.7 19.7 17.1 18.5 17.5 18.1 18.7 17.7 17.5 16.5 17.1 17.7 16.7 18.1 15.5Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  );
+}
+
+function ToggleGlyph({ collapsed }: { collapsed: boolean }) {
+  return collapsed ? (
+    <svg aria-hidden="true" className="sidebar-toggle-glyph" viewBox="0 0 24 24" fill="none">
+      <path d="M5 7.25h14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      <path d="M5 12h14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      <path d="M5 16.75h14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  ) : (
+    <svg aria-hidden="true" className="sidebar-toggle-glyph" viewBox="0 0 24 24" fill="none">
+      <rect x="4.5" y="5" width="15" height="14" rx="3.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M14 6v12" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+function NavIcon({ icon }: { icon: SidebarNavItem["icon"] }) {
+  switch (icon) {
+    case "library":
+      return (
+        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4.9 8.2a2.3 2.3 0 0 1 2.3-2.3h3.6c.45 0 .88.18 1.2.5l1.15 1.14c.32.32.75.5 1.2.5h2.45a2.3 2.3 0 0 1 2.3 2.3v5.5a2.3 2.3 0 0 1-2.3 2.3H7.2a2.3 2.3 0 0 1-2.3-2.3V8.2Z"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.55"
+          />
+          <path d="M16.9 5.2 17.25 6.2 18.25 6.55 17.25 6.9 16.9 7.9 16.55 6.9 15.55 6.55 16.55 6.2 16.9 5.2Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
+        </svg>
+      );
+    case "analysis":
+      return (
+        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
+          <circle cx="10.5" cy="10.5" r="4.8" stroke="currentColor" strokeWidth="1.55" />
+          <path d="m14.2 14.2 3.8 3.8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
+          <path d="M16.9 5.15 17.25 6.15 18.25 6.5 17.25 6.85 16.9 7.85 16.55 6.85 15.55 6.5 16.55 6.15 16.9 5.15Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
+        </svg>
+      );
+    case "writing":
+      return (
+        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
+          <path d="m6.9 16.95 2.45-.58 7.35-7.35a1.7 1.7 0 1 0-2.4-2.4L6.95 13.97l-.58 2.4a.5.5 0 0 0 .53.58Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
+          <path d="M13.4 7.5 16.5 10.6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
+          <path d="M18.05 4.95 18.35 5.8 19.2 6.1 18.35 6.4 18.05 7.25 17.75 6.4 16.9 6.1 17.75 5.8 18.05 4.95Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
+        </svg>
+      );
+    case "review":
+      return (
+        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
+          <path d="M12 5.15 7.3 7.05v3.98c0 3.13 1.94 5.31 4.7 7.02 2.76-1.71 4.7-3.89 4.7-7.02V7.05L12 5.15Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
+          <path d="m10.1 11.95 1.35 1.35 2.85-2.85" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
+          <path d="M18 5.1 18.3 5.95 19.15 6.25 18.3 6.55 18 7.4 17.7 6.55 16.85 6.25 17.7 5.95 18 5.1Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
+        </svg>
+      );
+    case "layout":
+      return (
+        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
+          <rect x="5.05" y="5.45" width="13.9" height="13.1" rx="2.2" stroke="currentColor" strokeWidth="1.55" />
+          <path d="M9.45 5.45v13.1" stroke="currentColor" strokeWidth="1.55" />
+          <path d="M9.45 10.15h9.5" stroke="currentColor" strokeWidth="1.55" />
+          <path d="M17.8 4.95 18.1 5.8 18.95 6.1 18.1 6.4 17.8 7.25 17.5 6.4 16.65 6.1 17.5 5.8 17.8 4.95Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
+        </svg>
+      );
+    case "settings":
+      return (
+        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
+          <path d="M7 7.2h10" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
+          <path d="M7 12h10" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
+          <path d="M7 16.8h10" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
+          <circle cx="10" cy="7.2" r="1.45" fill="white" stroke="currentColor" strokeWidth="1.45" />
+          <circle cx="14.5" cy="12" r="1.45" fill="white" stroke="currentColor" strokeWidth="1.45" />
+          <circle cx="11.4" cy="16.8" r="1.45" fill="white" stroke="currentColor" strokeWidth="1.45" />
+          <path d="M18.1 4.95 18.45 5.95 19.45 6.3 18.45 6.65 18.1 7.65 17.75 6.65 16.75 6.3 17.75 5.95 18.1 4.95Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
+        </svg>
+      );
+  }
 }
 
 export function WorkspaceSidebar({
   collapsed,
   modules,
   activeModule,
-  projects,
-  selectedProjectId,
   sessionReady,
   busyLabel,
   message,
+  userName,
+  userAccountLabel,
   onSelectModule,
-  onSelectProject,
   onToggleCollapsed,
   onOpenSettings,
-  onOpenCopilot,
-  onLogout,
 }: WorkspaceSidebarProps) {
-  const visibleModules = NAV_ITEMS.filter((item) => isModuleAvailable(modules, item.id));
-
+  const visibleItems = NAV_ITEMS.filter((item) => item.kind === "action" || isModuleAvailable(modules, item.moduleId ?? ""));
+  const resolvedUserName = formatFallbackName(sessionReady, userName);
+  const resolvedUserAccountLabel = userAccountLabel?.trim() || (sessionReady ? "已登录" : "未登录");
+  const initials = buildUserInitials(resolvedUserName);
   return (
     <aside className={`workspace-sidebar ${collapsed ? "workspace-sidebar-collapsed" : ""}`}>
-      <div className="workspace-brand">
-        <button
-          aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
-          className="sidebar-toggle"
-          onClick={onToggleCollapsed}
-          type="button"
-        >
-          <span className="brand-point" />
-        </button>
-        {!collapsed ? (
-          <div>
-            <p className="eyebrow">AIBidder</p>
-            <h1>投标工作台</h1>
-          </div>
-        ) : null}
+      <div className="workspace-sidebar-inner">
+        <div className="workspace-brand workspace-brand-chatgpt">
+          <button
+            aria-label="返回首页"
+            className="sidebar-brand-button"
+            onClick={() => onSelectModule("home")}
+            title="返回首页"
+            type="button"
+          >
+            <SidebarGlyph />
+          </button>
+          <button
+            aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
+            className="sidebar-toggle"
+            onClick={onToggleCollapsed}
+            type="button"
+          >
+            <ToggleGlyph collapsed={collapsed} />
+          </button>
+        </div>
+
+        <nav className="sidebar-nav sidebar-nav-chatgpt" aria-label="工作模块">
+          {visibleItems.map((item) => {
+            const active = item.kind === "module" ? isModuleActive(activeModule, item.moduleId ?? "") : false;
+            const handleClick = () => {
+              if (item.kind === "module" && item.moduleId) {
+                onSelectModule(item.moduleId);
+                return;
+              }
+
+              onOpenSettings();
+            };
+
+            return (
+              <button
+                key={item.id}
+                aria-current={active ? "page" : undefined}
+                className={`sidebar-nav-item sidebar-nav-item-chatgpt ${active ? "sidebar-nav-item-active" : ""}`}
+                onClick={handleClick}
+                title={collapsed ? item.label : undefined}
+                type="button"
+              >
+                <span className="sidebar-nav-icon">
+                  <NavIcon icon={item.icon} />
+                </span>
+                {!collapsed ? <span className="sidebar-nav-label">{item.label}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      {!collapsed ? (
-        <div className="sidebar-status-card" aria-live="polite">
-          <div className={`status-pill ${sessionReady ? "status-pill-ready" : "status-pill-warning"}`}>
-            <span className="status-pill-dot" />
-            {sessionReady ? "已连接" : "请先登录"}
-          </div>
-          <strong>{busyLabel || "可以开始处理"}</strong>
-          <p>{message}</p>
-        </div>
-      ) : null}
-
-      {!collapsed ? (
-        <label className="sidebar-project-select">
-          当前项目
-          <select
-            value={selectedProjectId ?? ""}
-            onChange={(event) => onSelectProject(Number(event.target.value) || null)}
-          >
-            <option value="">请选择项目</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                #{project.id} · {project.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-
-      <nav className="sidebar-nav" aria-label="工作模块">
-        {visibleModules.map((module) => {
-          const active = isModuleActive(activeModule, module.id);
-
-          return (
-            <button
-              key={module.id}
-              aria-current={active ? "page" : undefined}
-              className={`sidebar-nav-item ${active ? "sidebar-nav-item-active" : ""}`}
-              onClick={() => onSelectModule(module.id)}
-              title={collapsed ? module.label : undefined}
-              type="button"
-            >
-              <span className="sidebar-nav-icon">{module.shortLabel}</span>
-              {!collapsed ? (
-                <span className="sidebar-nav-copy">
-                  <strong>{module.label}</strong>
-                  <small>{module.hint}</small>
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="sidebar-actions">
-        <button className="sidebar-action" onClick={onOpenCopilot} type="button">
-          <span className="sidebar-action-point" />
-          {!collapsed ? <span>打开助手</span> : null}
+      <div className="sidebar-user-wrap">
+        <button
+          className={`sidebar-user-card ${sessionReady ? "sidebar-user-card-ready" : "sidebar-user-card-guest"}`}
+          onClick={onOpenSettings}
+          title={sessionReady ? "打开设置" : "请先登录"}
+          type="button"
+        >
+          <span className="sidebar-user-avatar" aria-hidden="true">
+            <span>{initials}</span>
+          </span>
+          {!collapsed ? (
+            <span className="sidebar-user-copy">
+              <strong>{resolvedUserName}</strong>
+              <small>{resolvedUserAccountLabel}</small>
+            </span>
+          ) : null}
         </button>
-        <button className="sidebar-action" onClick={onOpenSettings} type="button">
-          <span className="sidebar-action-point" />
-          {!collapsed ? <span>模型与服务设置</span> : null}
-        </button>
-        {sessionReady ? (
-          <button className="sidebar-action" onClick={onLogout} type="button">
-            <span className="sidebar-action-point" />
-            {!collapsed ? <span>退出登录</span> : null}
-          </button>
-        ) : null}
       </div>
     </aside>
   );
