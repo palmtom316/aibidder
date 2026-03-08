@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     writer_role_model: str = "deepseek-ai/DeepSeek-V3"
     reviewer_role_model: str = "deepseek-ai/DeepSeek-R1"
     adjudicator_role_model: str = "deepseek-ai/DeepSeek-R1"
+    enable_pdf_ocr_fallback: bool = False
+    ocr_api_base_url: str | None = None
+    ocr_api_key: str | None = None
+    ocr_request_timeout_seconds: float = 30.0
 
     async_document_ingestion: bool = False
     async_workbench_pipelines: bool = False

@@ -1,6 +1,5 @@
 from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,7 +7,7 @@ from app.api.deps.auth import get_current_user, require_roles
 from app.api.deps.pagination import PaginationParams, pagination_params
 from app.api.pagination import paginate_scalars
 from app.core.config import settings
-from app.core.storage import save_upload, validate_upload
+from app.core.storage import build_download_response, save_upload, validate_upload
 from app.db.models import (
     Document,
     DocumentArtifact,
@@ -501,8 +500,7 @@ def download_document_artifact(
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
 
-    filename = Path(artifact.storage_path).name
-    return FileResponse(path=artifact.storage_path, filename=filename)
+    return build_download_response(artifact.storage_path)
 
 
 def _load_history_candidate_terms(

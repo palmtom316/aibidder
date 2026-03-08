@@ -1,0 +1,12 @@
+.git
+.gitignore
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+node_modules
+src/frontend/node_modules
+src/frontend/.next
+src/frontend/tsconfig.tsbuildinfo
+storage
+services/api-server/aibidder.db

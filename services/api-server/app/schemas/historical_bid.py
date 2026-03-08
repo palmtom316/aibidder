@@ -69,7 +69,7 @@ class ReusePackItem(BaseModel):
 
 
 class HistoricalReusePackResponse(BaseModel):
-    query: dict[str, str]
+    query: dict[str, str | None]
     safe_reuse: list[ReusePackItem]
     slot_reuse: list[ReusePackItem]
     style_only: list[ReusePackItem]

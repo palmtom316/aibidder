@@ -3,7 +3,14 @@ import json
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.db.models import GeneratedSection, GenerationJob, RequirementConstraint, SectionEvidenceBinding, TenderRequirement
+from app.db.models import (
+    EvidenceUnit,
+    GeneratedSection,
+    GenerationJob,
+    SectionEvidenceBinding,
+    TenderRequirement,
+    VerificationIssue,
+)
 
 SECTION_BLUEPRINTS = [
     ("project_overview", "项目概况", ["basic_info"]),
@@ -48,6 +55,7 @@ def execute_generation_job(db: Session, job: GenerationJob) -> GenerationJob:
     )
     if generated_ids:
         db.execute(delete(SectionEvidenceBinding).where(SectionEvidenceBinding.generated_section_id.in_(generated_ids)))
+        db.execute(delete(VerificationIssue).where(VerificationIssue.generated_section_id.in_(generated_ids)))
     db.execute(
         delete(GeneratedSection).where(
             GeneratedSection.project_id == job.project_id,
@@ -56,8 +64,10 @@ def execute_generation_job(db: Session, job: GenerationJob) -> GenerationJob:
     )
     db.flush()
 
+    evidence_by_anchor = _load_evidence_units_by_anchor(db, project_id=job.project_id, source_document_id=job.source_document_id)
+
     created_count = 0
-    by_type = {}
+    by_type: dict[str, list[TenderRequirement]] = {}
     for requirement in requirements:
         by_type.setdefault(requirement.requirement_type, []).append(requirement)
 
@@ -68,6 +78,7 @@ def execute_generation_job(db: Session, job: GenerationJob) -> GenerationJob:
 
         draft_lines = [f"{title}："]
         evidence = []
+        section_missing_anchors: list[str] = []
         for item in matched:
             draft_lines.append(f"- {item.title}：{item.detail}")
             evidence.append(
@@ -77,6 +88,8 @@ def execute_generation_job(db: Session, job: GenerationJob) -> GenerationJob:
                     "priority": item.priority,
                 }
             )
+            if item.source_anchor and item.source_anchor not in evidence_by_anchor:
+                section_missing_anchors.append(item.source_anchor)
 
         section = GeneratedSection(
             organization_id=job.organization_id,
@@ -94,14 +107,44 @@ def execute_generation_job(db: Session, job: GenerationJob) -> GenerationJob:
         created_count += 1
 
         for item in matched:
+            evidence_unit = evidence_by_anchor.get(item.source_anchor)
             db.add(
                 SectionEvidenceBinding(
                     organization_id=job.organization_id,
                     project_id=job.project_id,
                     generated_section_id=section.id,
+                    evidence_unit_id=getattr(evidence_unit, 'id', None),
                     binding_type="requirement_anchor",
                     quote_text=item.detail[:200],
                     anchor=item.source_anchor,
+                )
+            )
+
+        if section_missing_anchors:
+            db.add(
+                VerificationIssue(
+                    organization_id=job.organization_id,
+                    project_id=job.project_id,
+                    generated_section_id=section.id,
+                    severity="warning",
+                    issue_type="missing_evidence_binding",
+                    title=f"{title}缺少可追溯证据绑定",
+                    detail="未找到以下锚点对应的证据单元：" + "、".join(sorted(set(section_missing_anchors))),
+                    status="open",
+                )
+            )
+
+        if len(section.draft_text.strip()) < 30:
+            db.add(
+                VerificationIssue(
+                    organization_id=job.organization_id,
+                    project_id=job.project_id,
+                    generated_section_id=section.id,
+                    severity="warning",
+                    issue_type="thin_section_content",
+                    title=f"{title}生成内容偏少",
+                    detail="章节内容过短，建议补充更完整的响应文本。",
+                    status="open",
                 )
             )
 
@@ -110,3 +153,18 @@ def execute_generation_job(db: Session, job: GenerationJob) -> GenerationJob:
     db.commit()
     db.refresh(job)
     return job
+
+
+def _load_evidence_units_by_anchor(db: Session, *, project_id: int, source_document_id: int) -> dict[str, EvidenceUnit]:
+    units = list(
+        db.scalars(
+            select(EvidenceUnit)
+            .where(EvidenceUnit.project_id == project_id, EvidenceUnit.document_id == source_document_id)
+            .order_by(EvidenceUnit.id.asc())
+        )
+    )
+    by_anchor: dict[str, EvidenceUnit] = {}
+    for unit in units:
+        if unit.anchor and unit.anchor not in by_anchor:
+            by_anchor[unit.anchor] = unit
+    return by_anchor

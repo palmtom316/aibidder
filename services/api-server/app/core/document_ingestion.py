@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from zipfile import BadZipFile, ZipFile
 
 from app.core.document_parser import ParsedDocument, dump_structured_payload, parse_document
-from app.core.storage import save_binary_artifact, save_generated_artifact
+from app.core.storage import materialize_artifact, save_binary_artifact, save_generated_artifact
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ def ingest_document(
 ) -> DocumentIngestionResult:
     transitions = ["uploaded"]
     artifacts: list[GeneratedArtifact] = []
-    parse_source_path = source_path
+    parse_source_path = materialize_artifact(source_path)
     parse_filename = filename
     normalized_from: str | None = None
 
@@ -43,16 +43,18 @@ def ingest_document(
             project_id=project_id,
             document_id=document_id,
             version_no=version_no,
-            source_path=source_path,
+            source_path=parse_source_path,
         )
         if normalized_source_path is None:
             transitions.append("failed")
-            parse_log = {
-                "parser": "normalization_failed",
-                "transitions": transitions,
-                "source_filename": filename,
-                "normalized_from": "doc",
-            }
+            parse_log = _build_failure_parse_log(
+                code="doc_normalization_failed",
+                message="Failed to normalize .doc document to .docx",
+                transitions=transitions,
+                source_filename=filename,
+                normalized_from="doc",
+                parser="normalization_failed",
+            )
             artifacts.append(
                 GeneratedArtifact(
                     artifact_type="parse_log",
@@ -68,16 +70,11 @@ def ingest_document(
             )
             return DocumentIngestionResult(status="failed", artifacts=artifacts, parse_log=parse_log)
 
-        parse_source_path = normalized_source_path
+        parse_source_path = materialize_artifact(normalized_source_path)
         parse_filename = f"{Path(filename).stem}.docx"
         normalized_from = "doc"
         transitions.append("normalized")
-        artifacts.append(
-            GeneratedArtifact(
-                artifact_type="normalized_source",
-                storage_path=normalized_source_path,
-            )
-        )
+        artifacts.append(GeneratedArtifact(artifact_type="normalized_source", storage_path=normalized_source_path))
 
     transitions.append("parsing")
     parsed_document = parse_document(
@@ -87,12 +84,14 @@ def ingest_document(
     )
     if parsed_document is None:
         transitions.append("failed")
-        parse_log = {
-            "parser": "parse_failed",
-            "transitions": transitions,
-            "source_filename": filename,
-            "normalized_from": normalized_from,
-        }
+        parse_log = _build_failure_parse_log(
+            code="document_parse_failed",
+            message="Failed to parse document into structured markdown/json artifacts",
+            transitions=transitions,
+            source_filename=filename,
+            normalized_from=normalized_from,
+            parser="parse_failed",
+        )
         artifacts.append(
             GeneratedArtifact(
                 artifact_type="parse_log",
@@ -214,6 +213,27 @@ def build_parse_log(
         "transitions": transitions,
         "source_filename": source_filename,
         "normalized_from": normalized_from,
+        "code": None,
+        "message": None,
+    }
+
+
+def _build_failure_parse_log(
+    *,
+    code: str,
+    message: str,
+    transitions: list[str],
+    source_filename: str,
+    normalized_from: str | None,
+    parser: str,
+) -> dict:
+    return {
+        "parser": parser,
+        "transitions": transitions,
+        "source_filename": source_filename,
+        "normalized_from": normalized_from,
+        "code": code,
+        "message": message,
     }
 
 

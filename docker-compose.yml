@@ -2,9 +2,10 @@ services:
   migrate:
     build:
       context: ./services/api-server
+      dockerfile: Dockerfile
     env_file:
       - .env
-    command: ["alembic", "upgrade", "head"]
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
     restart: "no"
     depends_on:
       postgres:
@@ -13,8 +14,13 @@ services:
   api:
     build:
       context: ./services/api-server
+      dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      STORAGE_BACKEND: minio
+      ASYNC_DOCUMENT_INGESTION: "true"
+      ASYNC_WORKBENCH_PIPELINES: "true"
     restart: unless-stopped
     ports:
       - "${AIBIDDER_API_PORT:-8080}:8080"
@@ -28,9 +34,14 @@ services:
 
   worker:
     build:
-      context: ./services/worker
+      context: .
+      dockerfile: services/worker/Dockerfile
     env_file:
       - .env
+    environment:
+      STORAGE_BACKEND: minio
+      WORKER_BROKER_URL: redis://redis:6379/0
+      WORKER_RESULT_BACKEND: redis://redis:6379/1
     restart: unless-stopped
     depends_on:
       migrate:

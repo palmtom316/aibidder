@@ -1,8 +1,8 @@
 import json
-from pathlib import Path
-
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+
+from app.core.storage import read_text_artifact
 
 from app.db.models import DocumentArtifact, DocumentVersion, HistoricalBidDocument, HistoricalBidSection
 from app.services.section_classifier import classify_section_type
@@ -21,7 +21,7 @@ def rebuild_historical_bid_sections(db: Session, historical_bid: HistoricalBidDo
     if json_artifact is None:
         return []
 
-    payload = json.loads(Path(json_artifact.storage_path).read_text(encoding="utf-8"))
+    payload = json.loads(read_text_artifact(json_artifact.storage_path))
     sections_payload = payload.get("sections", [])
 
     db.execute(

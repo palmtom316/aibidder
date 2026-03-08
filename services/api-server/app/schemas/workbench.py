@@ -271,6 +271,21 @@ class GeneratedSectionResponse(BaseModel):
     updated_at: datetime
 
 
+class VerificationIssueResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    project_id: int
+    generated_section_id: int | None
+    severity: str
+    issue_type: str
+    title: str
+    detail: str
+    status: str
+    created_at: datetime
+
+
 class ReviewIssueResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

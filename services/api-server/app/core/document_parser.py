@@ -1,8 +1,13 @@
+import base64
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree
 from zipfile import ZipFile
+
+import httpx
+
+from app.core.config import settings
 
 
 @dataclass(frozen=True)
@@ -200,6 +205,7 @@ def _parse_pdf(source_path: str, filename: str) -> ParsedDocument | None:
     return (
         _parse_pdf_with_pymupdf(source_path, filename)
         or _parse_pdf_with_pypdf(source_path, filename)
+        or _parse_pdf_with_ocr(source_path, filename)
         or _parse_pdf_fallback(source_path, filename)
     )
 
@@ -210,23 +216,26 @@ def _parse_pdf_with_pymupdf(source_path: str, filename: str) -> ParsedDocument |
     except ImportError:
         return None
 
-    document = fitz.open(source_path)
-    page_sections: list[dict] = []
-    markdown_pages: list[str] = []
-    for index, page in enumerate(document, start=1):
-        text = page.get_text("text").strip()
-        if not text:
-            continue
-        markdown_pages.append(text)
-        page_sections.append(
-            {
-                "title": f"Page {index}",
-                "level": 1,
-                "anchor": f"section-{index}",
-                "page": index,
-                "content": text,
-            }
-        )
+    try:
+        document = fitz.open(source_path)
+        page_sections: list[dict] = []
+        markdown_pages: list[str] = []
+        for index, page in enumerate(document, start=1):
+            text = page.get_text("text").strip()
+            if not text:
+                continue
+            markdown_pages.append(text)
+            page_sections.append(
+                {
+                    "title": f"Page {index}",
+                    "level": 1,
+                    "anchor": f"section-{index}",
+                    "page": index,
+                    "content": text,
+                }
+            )
+    except Exception:
+        return None
 
     if not page_sections:
         return None
@@ -251,23 +260,26 @@ def _parse_pdf_with_pypdf(source_path: str, filename: str) -> ParsedDocument | N
     except ImportError:
         return None
 
-    reader = PdfReader(source_path)
-    page_sections: list[dict] = []
-    markdown_pages: list[str] = []
-    for index, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
-        if not text:
-            continue
-        markdown_pages.append(text)
-        page_sections.append(
-            {
-                "title": f"Page {index}",
-                "level": 1,
-                "anchor": f"section-{index}",
-                "page": index,
-                "content": text,
-            }
-        )
+    try:
+        reader = PdfReader(source_path)
+        page_sections: list[dict] = []
+        markdown_pages: list[str] = []
+        for index, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            if not text:
+                continue
+            markdown_pages.append(text)
+            page_sections.append(
+                {
+                    "title": f"Page {index}",
+                    "level": 1,
+                    "anchor": f"section-{index}",
+                    "page": index,
+                    "content": text,
+                }
+            )
+    except Exception:
+        return None
 
     if not page_sections:
         return None
@@ -284,6 +296,111 @@ def _parse_pdf_with_pypdf(source_path: str, filename: str) -> ParsedDocument | N
             "sections": page_sections,
         },
     )
+
+
+def _parse_pdf_with_ocr(source_path: str, filename: str) -> ParsedDocument | None:
+    if not settings.enable_pdf_ocr_fallback:
+        return None
+
+    page_images = _render_pdf_pages_for_ocr(source_path)
+    if not page_images:
+        return None
+
+    page_texts = _request_ocr_page_texts(page_images)
+    if not page_texts:
+        return None
+
+    sections = [
+        {
+            "title": f"Page {index}",
+            "level": 1,
+            "anchor": f"section-{index}",
+            "page": index,
+            "content": text,
+        }
+        for index, text in enumerate(page_texts, start=1)
+        if text.strip()
+    ]
+    if not sections:
+        return None
+
+    return ParsedDocument(
+        parser_name="pdf_ocr",
+        markdown="\n\n".join(section["content"] for section in sections),
+        structured_payload={
+            "document": {
+                "format": "pdf",
+                "filename": filename,
+                "normalized_from": None,
+            },
+            "sections": sections,
+        },
+    )
+
+
+def _render_pdf_pages_for_ocr(source_path: str) -> list[bytes]:
+    try:
+        import fitz
+    except ImportError:
+        return []
+
+    document = fitz.open(source_path)
+    rendered_pages: list[bytes] = []
+    for page in document:
+        pixmap = page.get_pixmap(dpi=150)
+        rendered_pages.append(pixmap.tobytes("png"))
+    return rendered_pages
+
+
+def _request_ocr_page_texts(page_images: list[bytes]) -> list[str]:
+    api_base_url = settings.ocr_api_base_url or settings.runtime_api_base_url
+    api_key = settings.ocr_api_key or settings.runtime_api_key
+    if not api_base_url or not api_key:
+        return []
+
+    outputs: list[str] = []
+    url = f"{api_base_url.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    for image_bytes in page_images:
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        payload = {
+            "model": settings.ocr_role_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract all readable text from this document page as plain text."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                    ],
+                }
+            ],
+        }
+        try:
+            with httpx.Client(timeout=settings.ocr_request_timeout_seconds) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+        except httpx.HTTPError:
+            return []
+        data = response.json()
+        outputs.append(_extract_openai_text(data))
+    return outputs
+
+
+def _extract_openai_text(payload: dict) -> str:
+    choices = payload.get("choices", [])
+    if not choices:
+        return ""
+    message = choices[0].get("message", {})
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                chunks.append(item["text"].strip())
+        return "\n".join(chunk for chunk in chunks if chunk)
+    return ""
 
 
 def _parse_pdf_fallback(source_path: str, filename: str) -> ParsedDocument | None:

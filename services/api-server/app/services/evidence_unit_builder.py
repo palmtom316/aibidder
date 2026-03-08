@@ -1,8 +1,8 @@
 import json
-from pathlib import Path
-
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+
+from app.core.storage import read_text_artifact
 
 from app.db.models import Document, DocumentArtifact, DocumentVersion, EvidenceUnit, Project
 
@@ -36,7 +36,7 @@ def rebuild_evidence_units_for_document(db: Session, document: Document) -> list
     if json_artifact is None:
         return []
 
-    payload = json.loads(Path(json_artifact.storage_path).read_text(encoding="utf-8"))
+    payload = json.loads(read_text_artifact(json_artifact.storage_path))
     sections_payload = payload.get("sections", [])
 
     db.execute(delete(EvidenceUnit).where(EvidenceUnit.document_version_id == latest_version.id))

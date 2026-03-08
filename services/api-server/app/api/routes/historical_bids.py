@@ -206,6 +206,7 @@ def list_reuse_units(
 def search_historical_reuse_units(
     project_type: str,
     section_type: str,
+    q: str | None = None,
     pagination: PaginationParams = Depends(pagination_params),
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -215,6 +216,7 @@ def search_historical_reuse_units(
         organization_id=current_user.organization_id,
         project_type=project_type,
         section_type=section_type,
+        q=q,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -223,6 +225,7 @@ def search_historical_reuse_units(
         "query": {
             "project_type": project_type,
             "section_type": section_type,
+            "q": q,
         },
         **pack,
     }

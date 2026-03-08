@@ -1,9 +1,9 @@
 import json
 from datetime import datetime, timezone
-from pathlib import Path
-
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+
+from app.core.storage import read_text_artifact
 
 from app.db.models import (
     DecompositionRun,
@@ -172,7 +172,7 @@ def _load_document_payload(db: Session, document_id: int) -> dict | None:
     )
     if json_artifact is None:
         return None
-    return json.loads(Path(json_artifact.storage_path).read_text(encoding="utf-8"))
+    return json.loads(read_text_artifact(json_artifact.storage_path))
 
 
 def _clear_previous_results(db: Session, project_id: int, source_document_id: int) -> None:

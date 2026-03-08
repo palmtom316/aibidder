@@ -1,5 +1,7 @@
+import json
+import time
 from pathlib import Path
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -9,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.core.config import settings
+from app.core.storage import build_download_response
 from app.api.pagination import slice_results
 from app.db.models import (
     DecompositionRun,
@@ -25,6 +28,7 @@ from app.db.models import (
     Qualification,
     RenderedOutput,
     ReviewIssue,
+    VerificationIssue,
     ReviewRun,
     SubmissionRecord,
 )
@@ -55,6 +59,7 @@ from app.schemas.workbench import (
     QualificationUpdate,
     RenderedOutputResponse,
     ReviewIssueResponse,
+    VerificationIssueResponse,
     ReviewRunCreate,
     ReviewRunResponse,
     SubmissionRecordCreate,
@@ -72,10 +77,26 @@ from app.services.workbench_pipeline_tasks import dispatch_workbench_pipeline_ta
 router = APIRouter(prefix="/api/v1/workbench", tags=["workbench"])
 
 
-def _stream_progress_event(payload: dict) -> StreamingResponse:
+def _encode_sse(payload: dict) -> str:
+    return f"event: progress\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _stream_progress_event(fetch_payload: Callable[[], dict], *, timeout_seconds: float = 5.0, poll_interval: float = 0.1) -> StreamingResponse:
     def event_iterator():
-        yield "event: progress\n"
-        yield f"data: {payload}\n\n"
+        deadline = time.monotonic() + timeout_seconds
+        last_payload: str | None = None
+        while True:
+            payload = fetch_payload()
+            encoded = _encode_sse(payload)
+            if encoded != last_payload:
+                yield encoded
+                last_payload = encoded
+            status_value = str(payload.get("status", "")).lower()
+            if status_value in {"completed", "failed", "approved", "missing"}:
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(poll_interval)
 
     return StreamingResponse(event_iterator(), media_type="text/event-stream")
 
@@ -924,7 +945,20 @@ def stream_decomposition_run_events(
     )
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decomposition run not found")
-    return _stream_progress_event({"id": run.id, "status": run.status, "progress_pct": run.progress_pct})
+
+    def fetch_payload() -> dict:
+        db.expire_all()
+        refreshed = db.scalar(
+            select(DecompositionRun).where(
+                DecompositionRun.id == run_id,
+                DecompositionRun.organization_id == current_user.organization_id,
+            )
+        )
+        if refreshed is None:
+            return {"id": run_id, "status": "missing", "progress_pct": 0}
+        return {"id": refreshed.id, "status": refreshed.status, "progress_pct": refreshed.progress_pct}
+
+    return _stream_progress_event(fetch_payload)
 
 
 @router.get("/generation/jobs/{job_id}/sections", response_model=list[GeneratedSectionResponse])
@@ -946,6 +980,29 @@ def list_generation_job_sections(
         GeneratedSection.source_document_id == job.source_document_id,
     )
     return list(db.scalars(stmt.order_by(GeneratedSection.id.asc())))
+
+
+@router.get("/generation/jobs/{job_id}/verification-issues", response_model=list[VerificationIssueResponse])
+def list_generation_job_verification_issues(
+    job_id: int,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Sequence[VerificationIssue]:
+    job = db.scalar(
+        select(GenerationJob).where(
+            GenerationJob.id == job_id,
+            GenerationJob.organization_id == current_user.organization_id,
+        )
+    )
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation job not found")
+
+    section_ids = select(GeneratedSection.id).where(
+        GeneratedSection.project_id == job.project_id,
+        GeneratedSection.source_document_id == job.source_document_id,
+    )
+    stmt = select(VerificationIssue).where(VerificationIssue.generated_section_id.in_(section_ids))
+    return list(db.scalars(stmt.order_by(VerificationIssue.id.asc())))
 
 
 @router.post("/generation/jobs/{job_id}/approve-outline", response_model=GenerationJobResponse)
@@ -983,7 +1040,20 @@ def stream_generation_job_events(
     )
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation job not found")
-    return _stream_progress_event({"id": job.id, "status": job.status, "target_sections": job.target_sections})
+
+    def fetch_payload() -> dict:
+        db.expire_all()
+        refreshed = db.scalar(
+            select(GenerationJob).where(
+                GenerationJob.id == job_id,
+                GenerationJob.organization_id == current_user.organization_id,
+            )
+        )
+        if refreshed is None:
+            return {"id": job_id, "status": "missing", "target_sections": 0}
+        return {"id": refreshed.id, "status": refreshed.status, "target_sections": refreshed.target_sections}
+
+    return _stream_progress_event(fetch_payload)
 
 
 @router.get("/review/runs/{run_id}/issues", response_model=list[ReviewIssueResponse])
@@ -1064,7 +1134,20 @@ def stream_review_run_events(
     )
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review run not found")
-    return _stream_progress_event({"id": run.id, "status": run.status, "blocking_issue_count": run.blocking_issue_count})
+
+    def fetch_payload() -> dict:
+        db.expire_all()
+        refreshed = db.scalar(
+            select(ReviewRun).where(
+                ReviewRun.id == run_id,
+                ReviewRun.organization_id == current_user.organization_id,
+            )
+        )
+        if refreshed is None:
+            return {"id": run_id, "status": "missing", "blocking_issue_count": 0}
+        return {"id": refreshed.id, "status": refreshed.status, "blocking_issue_count": refreshed.blocking_issue_count}
+
+    return _stream_progress_event(fetch_payload)
 
 
 @router.get("/layout/jobs/{job_id}/outputs", response_model=list[RenderedOutputResponse])
@@ -1099,7 +1182,20 @@ def stream_layout_job_events(
     )
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Layout job not found")
-    return _stream_progress_event({"id": job.id, "status": job.status, "template_name": job.template_name})
+
+    def fetch_payload() -> dict:
+        db.expire_all()
+        refreshed = db.scalar(
+            select(LayoutJob).where(
+                LayoutJob.id == job_id,
+                LayoutJob.organization_id == current_user.organization_id,
+            )
+        )
+        if refreshed is None:
+            return {"id": job_id, "status": "missing", "template_name": ""}
+        return {"id": refreshed.id, "status": refreshed.status, "template_name": refreshed.template_name}
+
+    return _stream_progress_event(fetch_payload)
 
 
 @router.get("/layout/outputs/{output_id}/download")
@@ -1117,8 +1213,7 @@ def download_layout_output(
     if output is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rendered output not found")
 
-    filename = Path(output.storage_path).name
-    return FileResponse(path=output.storage_path, filename=filename)
+    return build_download_response(output.storage_path)
 
 
 @router.post(

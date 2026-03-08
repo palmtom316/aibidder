@@ -162,3 +162,109 @@ def test_workbench_pipeline_builds_generation_review_layout_and_feed_back() -> N
     assert feed_back.status_code == 201, feed_back.text
     assert feed_back.json()["category"] == "excellent_bid"
     assert feed_back.json()["title"] == "浙江输变电项目投标文件"
+
+
+def test_generation_persists_verification_issues_and_evidence_binding_foreign_keys() -> None:
+    from sqlalchemy import select
+
+    from app.db.models import EvidenceUnit, SectionEvidenceBinding, VerificationIssue
+    from app.db.session import SessionLocal
+
+    client = TestClient(app)
+    token = _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    created_project = client.post("/api/v1/projects", json={"name": "Verification Pipeline Project"}, headers=headers)
+    assert created_project.status_code == 201, created_project.text
+    project_id = created_project.json()["id"]
+
+    uploaded = client.post(
+        f"/api/v1/projects/{project_id}/documents/upload",
+        data={"document_type": "tender"},
+        files={
+            "file": (
+                "verification-pipeline.docx",
+                _build_tender_docx(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=headers,
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    document_id = uploaded.json()["id"]
+
+    decomposition = client.post(
+        "/api/v1/workbench/decomposition/runs",
+        json={"project_id": project_id, "source_document_id": document_id, "run_name": "七类拆解"},
+        headers=headers,
+    )
+    assert decomposition.status_code == 201, decomposition.text
+
+    generation = client.post(
+        "/api/v1/workbench/generation/jobs",
+        json={
+            "project_id": project_id,
+            "source_document_id": document_id,
+            "job_name": "技术标初稿生成",
+            "target_sections": 4,
+        },
+        headers=headers,
+    )
+    assert generation.status_code == 201, generation.text
+    generation_id = generation.json()["id"]
+
+    verification_response = client.get(
+        f"/api/v1/workbench/generation/jobs/{generation_id}/verification-issues",
+        headers=headers,
+    )
+    assert verification_response.status_code == 200, verification_response.text
+
+    with SessionLocal() as db:
+        evidence_unit = db.scalar(select(EvidenceUnit).where(EvidenceUnit.document_id == document_id).order_by(EvidenceUnit.id.asc()))
+        assert evidence_unit is not None
+
+        bindings = list(
+            db.scalars(
+                select(SectionEvidenceBinding)
+                .where(SectionEvidenceBinding.project_id == project_id)
+                .order_by(SectionEvidenceBinding.id.asc())
+            )
+        )
+        assert bindings
+        assert any(binding.evidence_unit_id is not None for binding in bindings)
+
+    with SessionLocal() as db:
+        db.query(EvidenceUnit).where(EvidenceUnit.document_id == document_id).delete(synchronize_session=False)
+        db.commit()
+
+    regeneration = client.post(
+        "/api/v1/workbench/generation/jobs",
+        json={
+            "project_id": project_id,
+            "source_document_id": document_id,
+            "job_name": "技术标再次生成",
+            "target_sections": 4,
+        },
+        headers=headers,
+    )
+    assert regeneration.status_code == 201, regeneration.text
+    regeneration_id = regeneration.json()["id"]
+
+    verification_response = client.get(
+        f"/api/v1/workbench/generation/jobs/{regeneration_id}/verification-issues",
+        headers=headers,
+    )
+    assert verification_response.status_code == 200, verification_response.text
+    assert verification_response.json()
+    assert any(item["issue_type"] == "missing_evidence_binding" for item in verification_response.json())
+
+    with SessionLocal() as db:
+        persisted_issues = list(
+            db.scalars(
+                select(VerificationIssue)
+                .where(VerificationIssue.project_id == project_id)
+                .order_by(VerificationIssue.id.asc())
+            )
+        )
+        assert persisted_issues
+        assert any(issue.issue_type == "missing_evidence_binding" for issue in persisted_issues)

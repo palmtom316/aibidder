@@ -86,9 +86,16 @@ import {
 } from "../lib/api";
 import { CopilotPanel } from "../components/copilot-panel";
 import { HeroPanel } from "../components/hero-panel";
-import { ModuleStrip } from "../components/module-strip";
 import { SettingsDrawer } from "../components/settings-drawer";
 import { WorkspaceSidebar } from "../components/workspace-sidebar";
+import {
+  BidGenerationView,
+  BidManagementView,
+  BidReviewView,
+  KnowledgeLibraryView,
+  LayoutFinalizeView,
+  TenderAnalysisView,
+} from "../components/workspace-views";
 import { clearStoredToken, getStoredToken, setStoredToken } from "../lib/session";
 
 type RuntimeFormState = {
@@ -138,15 +145,6 @@ const WORKSPACE_MODULES: Array<{
 
 function modulePath(module: WorkspaceModule) {
   return `/workspace/${module}`;
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }
 
 export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule } = {}) {
@@ -328,51 +326,9 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     };
   }
 
-  function parseDecompositionSummary(summaryJson: string): {
-    categories: Array<{
-      category_key: string;
-      label: string;
-      count: number;
-      items: Array<{
-        title: string;
-        detail: string;
-        source_anchor: string;
-        page: number;
-        source_excerpt: string;
-        priority: string;
-      }>;
-    }>;
-    totals?: { sections?: number; items?: number };
-  } | null {
-    if (!summaryJson || summaryJson === "{}") {
-      return null;
-    }
-    try {
-      return JSON.parse(summaryJson);
-    } catch {
-      return null;
-    }
-  }
-
   function activateModule(module: WorkspaceModule) {
     setActiveModule(module);
     router.push(modulePath(module));
-  }
-
-  function parseEvidenceSummary(summaryJson: string): Array<{
-    requirement_type: string;
-    source_anchor: string;
-    priority: string;
-  }> {
-    if (!summaryJson) {
-      return [];
-    }
-    try {
-      const payload = JSON.parse(summaryJson);
-      return Array.isArray(payload) ? payload : [];
-    } catch {
-      return [];
-    }
   }
 
   useEffect(() => {
@@ -1553,1353 +1509,360 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     );
   }
 
-  function renderOverviewModule() {
-    return (
-      <section className="workspace-stack">
-        <HeroPanel
-          projectCount={projects.length}
-          documentCount={documents.length}
-          historicalBidCount={historicalBids.length}
-        />
-        <ModuleStrip modules={workbenchOverview?.modules ?? []} />
-        <div className="workspace-grid workspace-grid-2">
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Overview</p>
-                <h3>当前项目上下文</h3>
-              </div>
-              <span className="badge">{selectedProject ? selectedProject.name : "未选择项目"}</span>
-            </div>
-            <div className="summary-list">
-              <div className="summary-item">
-                <span>项目数</span>
-                <strong>{projects.length}</strong>
-              </div>
-              <div className="summary-item">
-                <span>文档数</span>
-                <strong>{documents.length}</strong>
-              </div>
-              <div className="summary-item">
-                <span>历史标书</span>
-                <strong>{historicalBids.length}</strong>
-              </div>
-            </div>
-            <div className="inline-actions">
-              <button className="ghost-button" onClick={() => setActiveModule("tender-analysis")} type="button">
-                标书分析
-              </button>
-              <button className="ghost-button" onClick={() => setActiveModule("bid-generation")} type="button">
-                标书生成
-              </button>
-              <button className="ghost-button" onClick={() => setCopilotOpen(true)} type="button">
-                打开 Copilot
-              </button>
-            </div>
-          </section>
-
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Recent</p>
-                <h3>最近活动</h3>
-              </div>
-              <span className="badge">{busyLabel || "空闲"}</span>
-            </div>
-            <div className="stack">
-              <div className="info-block">
-                <strong>最近消息</strong>
-                <p>{message}</p>
-              </div>
-              <div className="info-block">
-                <strong>当前文档</strong>
-                <p>{selectedDocument ? `${selectedDocument.filename} · ${selectedDocument.document_type}` : "未选择文档"}</p>
-              </div>
-              <div className="info-block">
-                <strong>当前历史标书</strong>
-                <p>{selectedHistoricalBid ? `#${selectedHistoricalBid.id} · ${selectedHistoricalBid.project_type}` : "未选择历史标书"}</p>
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
-    );
-  }
-
-  function renderDocumentsModule() {
-    return (
-      <section className="workspace-stack">
-        <div className="workspace-grid workspace-grid-3">
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Projects</p>
-                <h3>项目与文档</h3>
-              </div>
-              <span className="badge">{selectedProject ? selectedProject.name : "未选择"}</span>
-            </div>
-            <form className="inline-form" onSubmit={handleCreateProject}>
-              <input
-                placeholder="新项目名称"
-                value={projectName}
-                onChange={(event) => setProjectName(event.target.value)}
-              />
-              <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
-                创建
-              </button>
-            </form>
-            <form className="stack" onSubmit={handleUploadDocument}>
-              <div className="two-column">
-                <label>
-                  文档类型
-                  <select value={uploadType} onChange={(event) => setUploadType(event.target.value)}>
-                    <option value="tender">tender</option>
-                    <option value="norm">norm</option>
-                    <option value="proposal">proposal</option>
-                  </select>
-                </label>
-                <label>
-                  上传文件
-                  <input type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} />
-                </label>
-              </div>
-              <button
-                className="primary-button"
-                disabled={!token || !selectedProjectId || !uploadFile || Boolean(busyLabel)}
-                type="submit"
-              >
-                上传文档
-              </button>
-            </form>
-            <div className="list">
-              {documents.map((document) => (
-                <button
-                  className={`list-item ${selectedDocumentId === document.id ? "list-item-active" : ""}`}
-                  key={document.id}
-                  onClick={() => void handleLoadEvidenceUnits(document.id)}
-                  type="button"
-                >
-                  <div>
-                    <strong>{document.filename}</strong>
-                    <p>
-                      #{document.id} · {document.document_type}
-                    </p>
-                  </div>
-                  <span>{formatDate(document.created_at)}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="surface-card workspace-span-2">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Knowledge Library</p>
-                <h3>投标资料库</h3>
-              </div>
-              <span className="badge">{knowledgeBaseEntries.length} 条资料</span>
-            </div>
-            <form className="stack" onSubmit={handleCreateLibraryEntry}>
-              <div className="three-column three-column-equal">
-                <label>
-                  资料分类
-                  <select value={libraryCategory} onChange={(event) => setLibraryCategory(event.target.value)}>
-                    <option value="historical_bid">历史标书</option>
-                    <option value="excellent_bid">优秀标书</option>
-                    <option value="company_qualification">公司资质</option>
-                    <option value="company_performance_asset">公司业绩与资产</option>
-                    <option value="personnel_qualification">人员资质</option>
-                    <option value="personnel_performance">人员业绩</option>
-                  </select>
-                </label>
-                <label>
-                  资料标题
-                  <input value={libraryTitle} onChange={(event) => setLibraryTitle(event.target.value)} />
-                </label>
-                <label>
-                  归口部门
-                  <input value={libraryOwnerName} onChange={(event) => setLibraryOwnerName(event.target.value)} />
-                </label>
-              </div>
-              <div className="inline-hint">
-                <span>当前绑定文档</span>
-                <strong>{selectedDocument ? `${selectedDocument.filename} #${selectedDocument.id}` : "未选择文档"}</strong>
-              </div>
-              <button
-                className="primary-button"
-                disabled={!token || !selectedProjectId || !libraryTitle.trim() || Boolean(busyLabel)}
-                type="submit"
-              >
-                登记入库并生成检测任务
-              </button>
-            </form>
-            <form className="stack" onSubmit={handleApplyLibraryFilters}>
-              <div className="panel-header compact">
-                <div>
-                  <p className="eyebrow">资料筛选</p>
-                  <h3>按分类、关键词、时间范围查询</h3>
-                </div>
-              </div>
-              <div className="three-column three-column-equal">
-                <label>
-                  分类
-                  <select value={libraryFilterCategory} onChange={(event) => setLibraryFilterCategory(event.target.value)}>
-                    <option value="all">全部分类</option>
-                    <option value="historical_bid">历史标书</option>
-                    <option value="excellent_bid">优秀标书</option>
-                    <option value="company_qualification">公司资质</option>
-                    <option value="company_performance_asset">公司业绩与资产</option>
-                    <option value="personnel_qualification">人员资质</option>
-                    <option value="personnel_performance">人员业绩</option>
-                  </select>
-                </label>
-                <label>
-                  关键词
-                  <input value={libraryFilterQuery} onChange={(event) => setLibraryFilterQuery(event.target.value)} placeholder="标题/部门/分类" />
-                </label>
-                <label>
-                  创建时间起
-                  <input type="date" value={libraryCreatedFrom} onChange={(event) => setLibraryCreatedFrom(event.target.value)} />
-                </label>
-              </div>
-              <div className="three-column three-column-equal">
-                <label>
-                  创建时间止
-                  <input type="date" value={libraryCreatedTo} onChange={(event) => setLibraryCreatedTo(event.target.value)} />
-                </label>
-                <div className="inline-hint">
-                  <span>当前结果</span>
-                  <strong>{knowledgeBaseEntries.length} 条</strong>
-                </div>
-                <div className="list-actions">
-                  <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
-                    应用筛选
-                  </button>
-                  <button className="ghost-button" disabled={Boolean(busyLabel)} onClick={() => void handleResetLibraryFilters()} type="button">
-                    重置
-                  </button>
-                </div>
-              </div>
-            </form>
-            <div className="list">
-              {knowledgeBaseEntries.map((entry) => (
-                <div className="list-item static-item" key={entry.id}>
-                  <div>
-                    <strong>{entry.title}</strong>
-                    <p>
-                      {entry.category} · {entry.owner_name || "未指定部门"}
-                    </p>
-                    <p>{entry.detected_summary || "待执行资料检测。"}</p>
-                  </div>
-                  <div className="list-actions">
-                    <span>{entry.detection_status}</span>
-                    <button className="ghost-button" onClick={() => void handleRunLibraryCheck(entry.id)} type="button">
-                      运行检测
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <div className="workspace-grid workspace-grid-2">
-          <form className="surface-card stack" onSubmit={handleCreateQualification}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>公司资质</h3>
-              </div>
-              <span className="badge">{qualifications.length}</span>
-            </div>
-            <label>
-              资质名称
-              <input value={qualificationName} onChange={(event) => setQualificationName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                资质等级
-                <input value={qualificationLevel} onChange={(event) => setQualificationLevel(event.target.value)} />
-              </label>
-              <label>
-                证书编号
-                <input value={qualificationCertificateNo} onChange={(event) => setQualificationCertificateNo(event.target.value)} />
-              </label>
-            </div>
-            <label>
-              有效期
-              <input value={qualificationValidUntil} onChange={(event) => setQualificationValidUntil(event.target.value)} placeholder="例如 2028-12-31" />
-            </label>
-            <button className="primary-button" disabled={!token || !qualificationName.trim() || Boolean(busyLabel)} type="submit">
-              新增公司资质
-            </button>
-            <div className="mini-list">
-              {qualifications.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.qualification_name}</strong>
-                    <span>{row.qualification_level || "未分级"} · {row.certificate_no || "无证书号"}</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeleteQualification(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <form className="surface-card stack" onSubmit={handleCreatePersonnelAsset}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>人员资质</h3>
-              </div>
-              <span className="badge">{personnelAssets.length}</span>
-            </div>
-            <label>
-              人员姓名
-              <input value={personnelName} onChange={(event) => setPersonnelName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                角色
-                <input value={personnelRoleTitle} onChange={(event) => setPersonnelRoleTitle(event.target.value)} />
-              </label>
-              <label>
-                证书编号
-                <input value={personnelCertificateNo} onChange={(event) => setPersonnelCertificateNo(event.target.value)} />
-              </label>
-            </div>
-            <button className="primary-button" disabled={!token || !personnelName.trim() || Boolean(busyLabel)} type="submit">
-              新增人员资质
-            </button>
-            <div className="mini-list">
-              {personnelAssets.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.full_name}</strong>
-                    <span>{row.role_title || "未设角色"} · {row.certificate_no || "无证书号"}</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeletePersonnelAsset(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <form className="surface-card stack" onSubmit={handleCreateEquipmentAsset}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>设施设备</h3>
-              </div>
-              <span className="badge">{equipmentAssets.length}</span>
-            </div>
-            <label>
-              设备名称
-              <input value={equipmentName} onChange={(event) => setEquipmentName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                型号
-                <input value={equipmentModelNo} onChange={(event) => setEquipmentModelNo(event.target.value)} />
-              </label>
-              <label>
-                数量
-                <input value={equipmentQuantity} onChange={(event) => setEquipmentQuantity(event.target.value)} inputMode="numeric" />
-              </label>
-            </div>
-            <button className="primary-button" disabled={!token || !equipmentName.trim() || Boolean(busyLabel)} type="submit">
-              新增设施设备
-            </button>
-            <div className="mini-list">
-              {equipmentAssets.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.equipment_name}</strong>
-                    <span>{row.model_no || "未设型号"} · {row.quantity} 台</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeleteEquipmentAsset(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <form className="surface-card stack" onSubmit={handleCreateProjectCredential}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>项目业绩</h3>
-              </div>
-              <span className="badge">{projectCredentials.length}</span>
-            </div>
-            <label>
-              项目名称
-              <input value={credentialProjectName} onChange={(event) => setCredentialProjectName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                业绩类型
-                <input value={credentialType} onChange={(event) => setCredentialType(event.target.value)} />
-              </label>
-              <label>
-                归口部门
-                <input value={credentialOwnerName} onChange={(event) => setCredentialOwnerName(event.target.value)} />
-              </label>
-            </div>
-            <button className="primary-button" disabled={!token || !credentialProjectName.trim() || Boolean(busyLabel)} type="submit">
-              新增项目业绩
-            </button>
-            <div className="mini-list">
-              {projectCredentials.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.project_name}</strong>
-                    <span>{row.credential_type} · {row.owner_name || "未指定部门"}</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeleteProjectCredential(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-        </div>
-      </section>
-    );
-  }
-
-  function renderEvidenceModule() {
-    return (
-      <section className="workspace-stack">
-        <section className="surface-card">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Evidence</p>
-              <h3>真值证据检索</h3>
-            </div>
-            <span className="badge">{evidenceResults.length} 命中</span>
-          </div>
-          <form className="stack" onSubmit={handleSearchEvidence}>
-            <div className="three-column">
-              <label>
-                关键词
-                <input
-                  value={evidenceQuery}
-                  onChange={(event) => setEvidenceQuery(event.target.value)}
-                  placeholder="例如：工期、资格要求、质量目标"
-                />
-              </label>
-              <label>
-                文档范围
-                <select value={evidenceDocumentType} onChange={(event) => setEvidenceDocumentType(event.target.value)}>
-                  <option value="">全部真值文档</option>
-                  <option value="tender">tender</option>
-                  <option value="norm">norm</option>
-                </select>
-              </label>
-              <div className="align-end">
-                <button
-                  className="primary-button"
-                  disabled={!token || !selectedProjectId || !evidenceQuery.trim() || Boolean(busyLabel)}
-                  type="submit"
-                >
-                  检索 evidence
-                </button>
-              </div>
-            </div>
-          </form>
-          <div className="workspace-grid workspace-grid-2">
-            <div className="scroll-box">
-              <strong>Search Results</strong>
-              {evidenceResults.map((row) => (
-                <article className="result-card" key={row.id}>
-                  <header>
-                    <strong>{row.section_title}</strong>
-                    <span>
-                      {row.filename} · p.{row.page_start}
-                    </span>
-                  </header>
-                  <p>{row.content}</p>
-                </article>
-              ))}
-            </div>
-            <div className="scroll-box">
-              <strong>Selected Document Evidence Units</strong>
-              {documentEvidenceUnits.map((row) => (
-                <article className="result-card" key={row.id}>
-                  <header>
-                    <strong>{row.section_title}</strong>
-                    <span>
-                      {row.unit_type} · {row.anchor}
-                    </span>
-                  </header>
-                  <p>{row.content}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-      </section>
-    );
-  }
-
-  function renderHistoricalModule() {
-    return (
-      <section className="workspace-stack">
-        <div className="workspace-grid workspace-grid-3">
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Historical</p>
-                <h3>历史标书导入</h3>
-              </div>
-              <span className="badge">{historicalBids.length} 份</span>
-            </div>
-            <form className="stack" onSubmit={handleImportHistoricalBid}>
-              <label>
-                选择已上传文档
-                <select
-                  value={importDocumentId ?? ""}
-                  onChange={(event) => setImportDocumentId(Number(event.target.value) || null)}
-                >
-                  <option value="">请选择文档</option>
-                  {documents.map((document) => (
-                    <option key={document.id} value={document.id}>
-                      #{document.id} · {document.filename}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="two-column">
-                <label>
-                  source_type
-                  <input value={historicalSourceType} onChange={(event) => setHistoricalSourceType(event.target.value)} />
-                </label>
-                <label>
-                  project_type
-                  <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
-                </label>
-              </div>
-              <div className="two-column">
-                <label>
-                  region
-                  <input value={historicalRegion} onChange={(event) => setHistoricalRegion(event.target.value)} />
-                </label>
-                <label>
-                  year
-                  <input value={historicalYear} onChange={(event) => setHistoricalYear(event.target.value)} />
-                </label>
-              </div>
-              <label className="checkbox-row">
-                <input
-                  checked={historicalRecommended}
-                  onChange={(event) => setHistoricalRecommended(event.target.checked)}
-                  type="checkbox"
-                />
-                标记为推荐样本
-              </label>
-              <button className="primary-button" disabled={!token || !importDocumentId || Boolean(busyLabel)} type="submit">
-                导入历史标书
-              </button>
-            </form>
-
-            <label>
-              当前历史标书
-              <select
-                value={selectedHistoricalBidId ?? ""}
-                onChange={(event) => setSelectedHistoricalBidId(Number(event.target.value) || null)}
-              >
-                <option value="">请选择历史标书</option>
-                {historicalBids.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    #{item.id} · doc {item.document_id} · {item.project_type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="button-row">
-              <button className="ghost-button" onClick={() => void handleLoadHistoricalArtifacts()} type="button">
-                刷新详情
-              </button>
-              <button className="ghost-button" onClick={() => void handleRebuildSections()} type="button">
-                重建 sections
-              </button>
-              <button className="ghost-button" onClick={() => void handleRebuildReuseUnits()} type="button">
-                重建 reuse units
-              </button>
-            </div>
-          </section>
-
-          <section className="surface-card workspace-span-2">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Reuse</p>
-                <h3>历史复用与污染校验</h3>
-              </div>
-              <span className="badge">{selectedHistoricalBid ? `#${selectedHistoricalBid.id}` : "未选择"}</span>
-            </div>
-            <form className="stack" onSubmit={handleSearchReuse}>
-              <div className="three-column">
-                <label>
-                  project_type
-                  <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
-                </label>
-                <label>
-                  section_type
-                  <input value={reuseSectionType} onChange={(event) => setReuseSectionType(event.target.value)} />
-                </label>
-                <div className="align-end">
-                  <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
-                    检索 reuse pack
-                  </button>
-                </div>
-              </div>
-            </form>
-            <div className="workspace-grid workspace-grid-3">
-              <div className="scroll-box">
-                <strong>safe_reuse</strong>
-                {reusePack?.safe_reuse.map((item) => (
-                  <article className="result-card" key={item.id}>
-                    <header>
-                      <strong>#{item.id}</strong>
-                      <span>{item.risk_level}</span>
-                    </header>
-                    <p>{item.sanitized_text}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="scroll-box">
-                <strong>slot_reuse</strong>
-                {reusePack?.slot_reuse.map((item) => (
-                  <article className="result-card" key={item.id}>
-                    <header>
-                      <strong>#{item.id}</strong>
-                      <span>{item.risk_level}</span>
-                    </header>
-                    <p>{item.sanitized_text}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="scroll-box">
-                <strong>style_only</strong>
-                {reusePack?.style_only.map((item) => (
-                  <article className="result-card" key={item.id}>
-                    <header>
-                      <strong>#{item.id}</strong>
-                      <span>{item.risk_level}</span>
-                    </header>
-                    <p>{item.sanitized_text}</p>
-                  </article>
-                ))}
-              </div>
-            </div>
-
-            <form className="stack" onSubmit={handleVerifyLeakage}>
-              <div className="two-column">
-                <label>
-                  section_id
-                  <input value={leakageSectionId} onChange={(event) => setLeakageSectionId(event.target.value)} />
-                </label>
-                <label>
-                  reuse_unit_ids
-                  <input
-                    value={leakageReuseUnitIds}
-                    onChange={(event) => setLeakageReuseUnitIds(event.target.value)}
-                    placeholder="1,2,3"
-                  />
-                </label>
-              </div>
-              <label>
-                forbidden_legacy_terms
-                <input
-                  value={leakageForbiddenTerms}
-                  onChange={(event) => setLeakageForbiddenTerms(event.target.value)}
-                  placeholder="旧项目名,旧业主名"
-                />
-              </label>
-              <label>
-                draft_text
-                <textarea rows={5} value={leakageDraftText} onChange={(event) => setLeakageDraftText(event.target.value)} />
-              </label>
-              <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-                校验历史污染
-              </button>
-              {leakageResult ? (
-                <div className={`message-box ${leakageResult.ok ? "message-success" : "message-warning"}`}>
-                  <strong>{leakageResult.ok ? "未命中旧项目痕迹" : "命中历史污染"}</strong>
-                  <p>{leakageResult.matched_terms.join("、") || "无"}</p>
-                </div>
-              ) : null}
-            </form>
-
-            <div className="workspace-grid workspace-grid-2">
-              <div className="scroll-box">
-                <strong>Sections</strong>
-                {historicalSections.map((section) => (
-                  <article className="result-card" key={section.id}>
-                    <header>
-                      <strong>{section.title}</strong>
-                      <span>{section.section_type}</span>
-                    </header>
-                    <p>{section.raw_text.slice(0, 180)}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="scroll-box">
-                <strong>Reuse Units</strong>
-                {historicalReuseUnits.map((unit) => (
-                  <article className="result-card" key={unit.id}>
-                    <header>
-                      <strong>#{unit.id}</strong>
-                      <span>
-                        {unit.reuse_mode} · {unit.risk_level}
-                      </span>
-                    </header>
-                    <p>{unit.sanitized_text}</p>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
-    );
-  }
-
-  function renderDecompositionModule() {
-    const summary = selectedDecompositionRun ? parseDecompositionSummary(selectedDecompositionRun.summary_json) : null;
-
-    return (
-      <section className="workspace-stack">
-        <div className="workspace-grid workspace-grid-2">
-          <section className="surface-card">
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">标书分析</p>
-                <h3>Tender Analysis</h3>
-              </div>
-              <span className="badge">{decompositionRuns.length}</span>
-            </div>
-            <form className="stack" onSubmit={handleCreateDecompositionRun}>
-              <label>
-                任务名
-                <input value={decompositionRunName} onChange={(event) => setDecompositionRunName(event.target.value)} />
-              </label>
-              <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-                创建解析任务
-              </button>
-            </form>
-            <div className="mini-list">
-              {decompositionRuns.map((row) => (
-                <button
-                  className={`list-item ${selectedDecompositionRun?.id === row.id ? "list-item-active" : ""}`}
-                  key={row.id}
-                  onClick={() => setSelectedDecompositionRunId(row.id)}
-                  type="button"
-                >
-                  <div>
-                    <strong>{row.run_name}</strong>
-                    <p>{row.status} · {row.progress_pct}%</p>
-                  </div>
-                  <span>{formatDate(row.created_at)}</span>
-                </button>
-              ))}
-            </div>
-            <div className="info-block">
-              <strong>原文预览</strong>
-              <p>优先展示解析后的 markdown，便于与七类拆解结果左右对照。</p>
-              {selectedDecompositionRun?.source_document_id ? (
-                <div className="inline-actions">
-                  <button
-                    className="ghost-button"
-                    disabled={!token || !selectedProjectId || Boolean(busyLabel)}
-                    onClick={() =>
-                      void handleDownloadDocumentArtifact(
-                        selectedDecompositionRun.source_document_id!,
-                        "source",
-                        selectedDocument?.filename || `document-${selectedDecompositionRun.source_document_id}`
-                      )
-                    }
-                    type="button"
-                  >
-                    下载原文
-                  </button>
-                  <button
-                    className="ghost-button"
-                    disabled={!token || !selectedProjectId || Boolean(busyLabel)}
-                    onClick={() =>
-                      void handleDownloadDocumentArtifact(
-                        selectedDecompositionRun.source_document_id!,
-                        "markdown",
-                        `document-${selectedDecompositionRun.source_document_id}.md`
-                      )
-                    }
-                    type="button"
-                  >
-                    下载解析稿
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            <div className="scroll-box">
-              <strong>{decompositionPreviewBusy ? "正在加载原文…" : "原文 / 解析预览"}</strong>
-              {decompositionSourcePreviewUrl ? (
-                <iframe className="document-preview-frame" src={decompositionSourcePreviewUrl} title="招标文件 PDF 预览" />
-              ) : null}
-              <pre className="code-box">{decompositionSourceMarkdown || "当前任务暂无可预览的解析稿。"}</pre>
-            </div>
-          </section>
-
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">拆解结果</p>
-                <h3>{selectedDecompositionRun ? selectedDecompositionRun.run_name : "等待创建任务"}</h3>
-              </div>
-              <span className="badge">{summary?.totals?.items ?? 0} 项</span>
-            </div>
-            {!summary ? (
-              <div className="stack">
-                <div className="info-block">
-                  <strong>当前项目</strong>
-                  <p>{selectedProject ? selectedProject.name : "未选择项目"}</p>
-                </div>
-                <div className="info-block">
-                  <strong>当前文档</strong>
-                  <p>建议先在投标资料库模块上传招标文件并创建拆解任务。</p>
-                </div>
-              </div>
-            ) : (
-              <div className="stack">
-                <div className="summary-list">
-                  <div className="summary-item">
-                    <span>解析章节</span>
-                    <strong>{summary.totals?.sections ?? 0}</strong>
-                  </div>
-                  <div className="summary-item">
-                    <span>拆解条目</span>
-                    <strong>{summary.totals?.items ?? 0}</strong>
-                  </div>
-                </div>
-                <div className="workspace-grid workspace-grid-2">
-                  {summary.categories.map((category) => (
-                    <article className="result-card" key={category.category_key}>
-                      <header>
-                        <strong>{category.label}</strong>
-                        <span>{category.count} 项</span>
-                      </header>
-                      {category.items.length === 0 ? (
-                        <p>暂无命中内容</p>
-                      ) : (
-                        category.items.map((item) => (
-                          <div className="info-block" key={`${category.category_key}-${item.source_anchor}-${item.title}`}>
-                            <strong>{item.title}</strong>
-                            <p>{item.source_excerpt}</p>
-                            <p>锚点：{item.source_anchor} · 第 {item.page} 页 · 优先级 {item.priority}</p>
-                          </div>
-                        ))
-                      )}
-                    </article>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-        </div>
-      </section>
-    );
-  }
-
   function renderActiveModule() {
     switch (activeModule) {
       case "knowledge-library":
         return (
-          <>
-            {renderOverviewModule()}
-            {renderDocumentsModule()}
-            {renderEvidenceModule()}
-            {renderHistoricalModule()}
-          </>
+          <KnowledgeLibraryView
+            busyLabel={busyLabel}
+            credentialOwnerName={credentialOwnerName}
+            credentialProjectName={credentialProjectName}
+            credentialType={credentialType}
+            documentEvidenceUnits={documentEvidenceUnits}
+            documents={documents}
+            equipmentAssets={equipmentAssets}
+            equipmentModelNo={equipmentModelNo}
+            equipmentName={equipmentName}
+            equipmentQuantity={equipmentQuantity}
+            evidenceDocumentType={evidenceDocumentType}
+            evidenceQuery={evidenceQuery}
+            evidenceResults={evidenceResults}
+            handleApplyLibraryFilters={handleApplyLibraryFilters}
+            handleCreateEquipmentAsset={handleCreateEquipmentAsset}
+            handleCreateLibraryEntry={handleCreateLibraryEntry}
+            handleCreatePersonnelAsset={handleCreatePersonnelAsset}
+            handleCreateProject={handleCreateProject}
+            handleCreateProjectCredential={handleCreateProjectCredential}
+            handleCreateQualification={handleCreateQualification}
+            handleDeleteEquipmentAsset={handleDeleteEquipmentAsset}
+            handleDeletePersonnelAsset={handleDeletePersonnelAsset}
+            handleDeleteProjectCredential={handleDeleteProjectCredential}
+            handleDeleteQualification={handleDeleteQualification}
+            handleImportHistoricalBid={handleImportHistoricalBid}
+            handleLoadEvidenceUnits={handleLoadEvidenceUnits}
+            handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
+            handleRebuildReuseUnits={handleRebuildReuseUnits}
+            handleRebuildSections={handleRebuildSections}
+            handleResetLibraryFilters={handleResetLibraryFilters}
+            handleRunLibraryCheck={handleRunLibraryCheck}
+            handleSearchEvidence={handleSearchEvidence}
+            handleSearchReuse={handleSearchReuse}
+            handleUploadDocument={handleUploadDocument}
+            handleVerifyLeakage={handleVerifyLeakage}
+            historicalBids={historicalBids}
+            historicalProjectType={historicalProjectType}
+            historicalRecommended={historicalRecommended}
+            historicalRegion={historicalRegion}
+            historicalReuseUnits={historicalReuseUnits}
+            historicalSections={historicalSections}
+            historicalSourceType={historicalSourceType}
+            historicalYear={historicalYear}
+            importDocumentId={importDocumentId}
+            knowledgeBaseEntries={knowledgeBaseEntries}
+            leakageDraftText={leakageDraftText}
+            leakageForbiddenTerms={leakageForbiddenTerms}
+            leakageResult={leakageResult}
+            leakageReuseUnitIds={leakageReuseUnitIds}
+            leakageSectionId={leakageSectionId}
+            libraryCategory={libraryCategory}
+            libraryCreatedFrom={libraryCreatedFrom}
+            libraryCreatedTo={libraryCreatedTo}
+            libraryFilterCategory={libraryFilterCategory}
+            libraryFilterQuery={libraryFilterQuery}
+            libraryOwnerName={libraryOwnerName}
+            libraryTitle={libraryTitle}
+            message={message}
+            onActivateModule={(module) => setActiveModule(module)}
+            onOpenCopilot={() => setCopilotOpen(true)}
+            personnelAssets={personnelAssets}
+            personnelCertificateNo={personnelCertificateNo}
+            personnelName={personnelName}
+            personnelRoleTitle={personnelRoleTitle}
+            projectCredentials={projectCredentials}
+            projectName={projectName}
+            projects={projects}
+            qualifications={qualifications}
+            qualificationCertificateNo={qualificationCertificateNo}
+            qualificationLevel={qualificationLevel}
+            qualificationName={qualificationName}
+            qualificationValidUntil={qualificationValidUntil}
+            reusePack={reusePack}
+            reuseSectionType={reuseSectionType}
+            selectedDocument={selectedDocument}
+            selectedDocumentId={selectedDocumentId}
+            selectedHistoricalBid={selectedHistoricalBid}
+            selectedProject={selectedProject}
+            selectedProjectId={selectedProjectId}
+            setCredentialOwnerName={setCredentialOwnerName}
+            setCredentialProjectName={setCredentialProjectName}
+            setCredentialType={setCredentialType}
+            setEquipmentModelNo={setEquipmentModelNo}
+            setEquipmentName={setEquipmentName}
+            setEquipmentQuantity={setEquipmentQuantity}
+            setEvidenceDocumentType={setEvidenceDocumentType}
+            setEvidenceQuery={setEvidenceQuery}
+            setHistoricalProjectType={setHistoricalProjectType}
+            setHistoricalRecommended={setHistoricalRecommended}
+            setHistoricalRegion={setHistoricalRegion}
+            setHistoricalSourceType={setHistoricalSourceType}
+            setHistoricalYear={setHistoricalYear}
+            setImportDocumentId={setImportDocumentId}
+            setLeakageDraftText={setLeakageDraftText}
+            setLeakageForbiddenTerms={setLeakageForbiddenTerms}
+            setLeakageReuseUnitIds={setLeakageReuseUnitIds}
+            setLeakageSectionId={setLeakageSectionId}
+            setLibraryCategory={setLibraryCategory}
+            setLibraryCreatedFrom={setLibraryCreatedFrom}
+            setLibraryCreatedTo={setLibraryCreatedTo}
+            setLibraryFilterCategory={setLibraryFilterCategory}
+            setLibraryFilterQuery={setLibraryFilterQuery}
+            setLibraryOwnerName={setLibraryOwnerName}
+            setLibraryTitle={setLibraryTitle}
+            setPersonnelCertificateNo={setPersonnelCertificateNo}
+            setPersonnelName={setPersonnelName}
+            setPersonnelRoleTitle={setPersonnelRoleTitle}
+            setProjectName={setProjectName}
+            setQualificationCertificateNo={setQualificationCertificateNo}
+            setQualificationLevel={setQualificationLevel}
+            setQualificationName={setQualificationName}
+            setQualificationValidUntil={setQualificationValidUntil}
+            setReuseSectionType={setReuseSectionType}
+            setSelectedHistoricalBidId={setSelectedHistoricalBidId}
+            setUploadFile={setUploadFile}
+            setUploadType={setUploadType}
+            token={token}
+            uploadType={uploadType}
+            workbenchOverview={workbenchOverview}
+          />
         );
       case "tender-analysis":
-        return renderDecompositionModule();
+        return (
+          <TenderAnalysisView
+            busyLabel={busyLabel}
+            decompositionPreviewBusy={decompositionPreviewBusy}
+            decompositionRunName={decompositionRunName}
+            decompositionRuns={decompositionRuns}
+            decompositionSourceMarkdown={decompositionSourceMarkdown}
+            decompositionSourcePreviewUrl={decompositionSourcePreviewUrl}
+            handleCreateDecompositionRun={handleCreateDecompositionRun}
+            handleDownloadDocumentArtifact={handleDownloadDocumentArtifact}
+            selectedDecompositionRun={selectedDecompositionRun}
+            selectedDocument={selectedDocument}
+            selectedProject={selectedProject}
+            selectedProjectId={selectedProjectId}
+            setDecompositionRunName={setDecompositionRunName}
+            setSelectedDecompositionRunId={setSelectedDecompositionRunId}
+            token={token}
+          />
+        );
       case "bid-generation":
-        return renderGenerationModule();
+        return (
+          <BidGenerationView
+            busyLabel={busyLabel}
+            generatedSections={generatedSections}
+            generationJobName={generationJobName}
+            generationJobs={generationJobs}
+            generationTargetSections={generationTargetSections}
+            handleApproveGenerationOutline={handleApproveGenerationOutline}
+            handleCreateGenerationJob={handleCreateGenerationJob}
+            selectedGenerationJob={selectedGenerationJob}
+            selectedGenerationJobId={selectedGenerationJobId}
+            selectedProjectId={selectedProjectId}
+            setGenerationJobName={setGenerationJobName}
+            setGenerationTargetSections={setGenerationTargetSections}
+            setSelectedGenerationJobId={setSelectedGenerationJobId}
+            token={token}
+          />
+        );
       case "bid-review":
-        return renderReviewModule();
+        return (
+          <BidReviewView
+            busyLabel={busyLabel}
+            handleConfirmReviewRunPass={handleConfirmReviewRunPass}
+            handleCreateReviewRun={handleCreateReviewRun}
+            handleRemediateReviewIssue={handleRemediateReviewIssue}
+            reviewIssues={reviewIssues}
+            reviewMode={reviewMode}
+            reviewRunName={reviewRunName}
+            reviewRuns={reviewRuns}
+            selectedProjectId={selectedProjectId}
+            selectedReviewRun={selectedReviewRun}
+            selectedReviewRunId={selectedReviewRunId}
+            setReviewMode={setReviewMode}
+            setReviewRunName={setReviewRunName}
+            setSelectedReviewRunId={setSelectedReviewRunId}
+            token={token}
+          />
+        );
       case "layout-finalize":
-        return renderLayoutModule();
+        return (
+          <LayoutFinalizeView
+            busyLabel={busyLabel}
+            handleCreateLayoutJob={handleCreateLayoutJob}
+            handleDownloadRenderedOutput={handleDownloadRenderedOutput}
+            layoutJobName={layoutJobName}
+            layoutJobs={layoutJobs}
+            layoutTemplateName={layoutTemplateName}
+            renderedOutputs={renderedOutputs}
+            selectedLayoutJob={selectedLayoutJob}
+            selectedLayoutJobId={selectedLayoutJobId}
+            selectedProjectId={selectedProjectId}
+            setLayoutJobName={setLayoutJobName}
+            setLayoutTemplateName={setLayoutTemplateName}
+            setSelectedLayoutJobId={setSelectedLayoutJobId}
+            token={token}
+          />
+        );
       case "bid-management":
-        return renderBidManagementModule();
+        return (
+          <BidManagementView
+            busyLabel={busyLabel}
+            handleApplySubmissionFilters={handleApplySubmissionFilters}
+            handleCreateSubmissionRecord={handleCreateSubmissionRecord}
+            handleFeedSubmissionRecordToLibrary={handleFeedSubmissionRecordToLibrary}
+            handleResetSubmissionFilters={handleResetSubmissionFilters}
+            selectedProjectId={selectedProjectId}
+            setSubmissionCreatedFrom={setSubmissionCreatedFrom}
+            setSubmissionCreatedTo={setSubmissionCreatedTo}
+            setSubmissionFilterQuery={setSubmissionFilterQuery}
+            setSubmissionFilterStatus={setSubmissionFilterStatus}
+            setSubmissionStatus={setSubmissionStatus}
+            setSubmissionTitle={setSubmissionTitle}
+            submissionCreatedFrom={submissionCreatedFrom}
+            submissionCreatedTo={submissionCreatedTo}
+            submissionFilterQuery={submissionFilterQuery}
+            submissionFilterStatus={submissionFilterStatus}
+            submissionRecords={submissionRecords}
+            submissionStatus={submissionStatus}
+            submissionTitle={submissionTitle}
+            token={token}
+          />
+        );
       default:
-        return renderOverviewModule();
+        return (
+          <KnowledgeLibraryView
+            busyLabel={busyLabel}
+            credentialOwnerName={credentialOwnerName}
+            credentialProjectName={credentialProjectName}
+            credentialType={credentialType}
+            documentEvidenceUnits={documentEvidenceUnits}
+            documents={documents}
+            equipmentAssets={equipmentAssets}
+            equipmentModelNo={equipmentModelNo}
+            equipmentName={equipmentName}
+            equipmentQuantity={equipmentQuantity}
+            evidenceDocumentType={evidenceDocumentType}
+            evidenceQuery={evidenceQuery}
+            evidenceResults={evidenceResults}
+            handleApplyLibraryFilters={handleApplyLibraryFilters}
+            handleCreateEquipmentAsset={handleCreateEquipmentAsset}
+            handleCreateLibraryEntry={handleCreateLibraryEntry}
+            handleCreatePersonnelAsset={handleCreatePersonnelAsset}
+            handleCreateProject={handleCreateProject}
+            handleCreateProjectCredential={handleCreateProjectCredential}
+            handleCreateQualification={handleCreateQualification}
+            handleDeleteEquipmentAsset={handleDeleteEquipmentAsset}
+            handleDeletePersonnelAsset={handleDeletePersonnelAsset}
+            handleDeleteProjectCredential={handleDeleteProjectCredential}
+            handleDeleteQualification={handleDeleteQualification}
+            handleImportHistoricalBid={handleImportHistoricalBid}
+            handleLoadEvidenceUnits={handleLoadEvidenceUnits}
+            handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
+            handleRebuildReuseUnits={handleRebuildReuseUnits}
+            handleRebuildSections={handleRebuildSections}
+            handleResetLibraryFilters={handleResetLibraryFilters}
+            handleRunLibraryCheck={handleRunLibraryCheck}
+            handleSearchEvidence={handleSearchEvidence}
+            handleSearchReuse={handleSearchReuse}
+            handleUploadDocument={handleUploadDocument}
+            handleVerifyLeakage={handleVerifyLeakage}
+            historicalBids={historicalBids}
+            historicalProjectType={historicalProjectType}
+            historicalRecommended={historicalRecommended}
+            historicalRegion={historicalRegion}
+            historicalReuseUnits={historicalReuseUnits}
+            historicalSections={historicalSections}
+            historicalSourceType={historicalSourceType}
+            historicalYear={historicalYear}
+            importDocumentId={importDocumentId}
+            knowledgeBaseEntries={knowledgeBaseEntries}
+            leakageDraftText={leakageDraftText}
+            leakageForbiddenTerms={leakageForbiddenTerms}
+            leakageResult={leakageResult}
+            leakageReuseUnitIds={leakageReuseUnitIds}
+            leakageSectionId={leakageSectionId}
+            libraryCategory={libraryCategory}
+            libraryCreatedFrom={libraryCreatedFrom}
+            libraryCreatedTo={libraryCreatedTo}
+            libraryFilterCategory={libraryFilterCategory}
+            libraryFilterQuery={libraryFilterQuery}
+            libraryOwnerName={libraryOwnerName}
+            libraryTitle={libraryTitle}
+            message={message}
+            onActivateModule={(module) => setActiveModule(module)}
+            onOpenCopilot={() => setCopilotOpen(true)}
+            personnelAssets={personnelAssets}
+            personnelCertificateNo={personnelCertificateNo}
+            personnelName={personnelName}
+            personnelRoleTitle={personnelRoleTitle}
+            projectCredentials={projectCredentials}
+            projectName={projectName}
+            projects={projects}
+            qualifications={qualifications}
+            qualificationCertificateNo={qualificationCertificateNo}
+            qualificationLevel={qualificationLevel}
+            qualificationName={qualificationName}
+            qualificationValidUntil={qualificationValidUntil}
+            reusePack={reusePack}
+            reuseSectionType={reuseSectionType}
+            selectedDocument={selectedDocument}
+            selectedDocumentId={selectedDocumentId}
+            selectedHistoricalBid={selectedHistoricalBid}
+            selectedProject={selectedProject}
+            selectedProjectId={selectedProjectId}
+            setCredentialOwnerName={setCredentialOwnerName}
+            setCredentialProjectName={setCredentialProjectName}
+            setCredentialType={setCredentialType}
+            setEquipmentModelNo={setEquipmentModelNo}
+            setEquipmentName={setEquipmentName}
+            setEquipmentQuantity={setEquipmentQuantity}
+            setEvidenceDocumentType={setEvidenceDocumentType}
+            setEvidenceQuery={setEvidenceQuery}
+            setHistoricalProjectType={setHistoricalProjectType}
+            setHistoricalRecommended={setHistoricalRecommended}
+            setHistoricalRegion={setHistoricalRegion}
+            setHistoricalSourceType={setHistoricalSourceType}
+            setHistoricalYear={setHistoricalYear}
+            setImportDocumentId={setImportDocumentId}
+            setLeakageDraftText={setLeakageDraftText}
+            setLeakageForbiddenTerms={setLeakageForbiddenTerms}
+            setLeakageReuseUnitIds={setLeakageReuseUnitIds}
+            setLeakageSectionId={setLeakageSectionId}
+            setLibraryCategory={setLibraryCategory}
+            setLibraryCreatedFrom={setLibraryCreatedFrom}
+            setLibraryCreatedTo={setLibraryCreatedTo}
+            setLibraryFilterCategory={setLibraryFilterCategory}
+            setLibraryFilterQuery={setLibraryFilterQuery}
+            setLibraryOwnerName={setLibraryOwnerName}
+            setLibraryTitle={setLibraryTitle}
+            setPersonnelCertificateNo={setPersonnelCertificateNo}
+            setPersonnelName={setPersonnelName}
+            setPersonnelRoleTitle={setPersonnelRoleTitle}
+            setProjectName={setProjectName}
+            setQualificationCertificateNo={setQualificationCertificateNo}
+            setQualificationLevel={setQualificationLevel}
+            setQualificationName={setQualificationName}
+            setQualificationValidUntil={setQualificationValidUntil}
+            setReuseSectionType={setReuseSectionType}
+            setSelectedHistoricalBidId={setSelectedHistoricalBidId}
+            setUploadFile={setUploadFile}
+            setUploadType={setUploadType}
+            token={token}
+            uploadType={uploadType}
+            workbenchOverview={workbenchOverview}
+          />
+        );
     }
-  }
-
-  function renderGenerationModule() {
-    const sectionCount = generatedSections.length;
-
-    return (
-      <section className="workspace-stack">
-        <div className="workspace-grid workspace-grid-2">
-          <form className="surface-card stack" onSubmit={handleCreateGenerationJob}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">标书生成</p>
-                <h3>Generation</h3>
-              </div>
-              <span className="badge">{generationJobs.length}</span>
-            </div>
-            <label>
-              任务名
-              <input value={generationJobName} onChange={(event) => setGenerationJobName(event.target.value)} />
-            </label>
-            <label>
-              目标章节数
-              <input
-                min="0"
-                type="number"
-                value={generationTargetSections}
-                onChange={(event) => setGenerationTargetSections(event.target.value)}
-              />
-            </label>
-            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-              创建生成任务
-            </button>
-            <label>
-              查看任务
-              <select
-                value={selectedGenerationJobId ?? ""}
-                onChange={(event) => setSelectedGenerationJobId(Number(event.target.value) || null)}
-              >
-                <option value="">请选择任务</option>
-                {generationJobs.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    #{row.id} · {row.job_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="mini-list">
-              {generationJobs.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <strong>{row.job_name}</strong>
-                  <span>{row.status}</span>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">生成结果</p>
-                <h3>{selectedGenerationJob ? selectedGenerationJob.job_name : "等待选择任务"}</h3>
-              </div>
-              <span className="badge">{sectionCount} 章</span>
-            </div>
-            <div className="stack">
-              <div className="info-block">
-                <strong>框架与章节</strong>
-                <p>
-                  {selectedGenerationJob
-                    ? `状态：${selectedGenerationJob.status}，目标章节：${selectedGenerationJob.target_sections}`
-                    : "先创建或选择一个生成任务。"}
-                </p>
-                <div className="inline-actions">
-                  <button
-                    className="ghost-button"
-                    disabled={!token || !selectedGenerationJob || Boolean(busyLabel) || selectedGenerationJob.status === "approved"}
-                    onClick={() => void handleApproveGenerationOutline()}
-                    type="button"
-                  >
-                    {selectedGenerationJob?.status === "approved" ? "已审批" : "审批框架"}
-                  </button>
-                </div>
-              </div>
-              {generatedSections.length ? (
-                <div className="scroll-box">
-                  {generatedSections.map((section) => {
-                    const evidence = parseEvidenceSummary(section.evidence_summary_json);
-                    return (
-                      <article className="result-card" key={section.id}>
-                        <header>
-                          <strong>{section.title}</strong>
-                          <span>
-                            {section.status} · {evidence.length} 条证据
-                          </span>
-                        </header>
-                        <p>{section.draft_text}</p>
-                        <div className="mini-list">
-                          {evidence.map((item, index) => (
-                            <div className="mini-item" key={`${section.id}-${index}`}>
-                              <strong>{item.requirement_type}</strong>
-                              <span>
-                                {item.source_anchor} · {item.priority}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="info-block">
-                  <strong>暂无章节草稿</strong>
-                  <p>创建生成任务后，这里会显示已生成的章节草稿和证据来源。</p>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      </section>
-    );
-  }
-
-  function renderReviewModule() {
-    const blockingIssues = reviewIssues.filter((item) => item.is_blocking).length;
-
-    return (
-      <section className="workspace-stack">
-        <div className="workspace-grid workspace-grid-2">
-          <form className="surface-card stack" onSubmit={handleCreateReviewRun}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">标书评审</p>
-                <h3>Review</h3>
-              </div>
-              <span className="badge">{reviewRuns.length}</span>
-            </div>
-            <label>
-              任务名
-              <input value={reviewRunName} onChange={(event) => setReviewRunName(event.target.value)} />
-            </label>
-            <label>
-              模式
-              <select value={reviewMode} onChange={(event) => setReviewMode(event.target.value)}>
-                <option value="simulated_scoring">模拟评分</option>
-                <option value="compliance_review">合规性审查</option>
-                <option value="disqualification_check">废标分析</option>
-              </select>
-            </label>
-            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-              创建评审任务
-            </button>
-            <label>
-              查看评审
-              <select
-                value={selectedReviewRunId ?? ""}
-                onChange={(event) => setSelectedReviewRunId(Number(event.target.value) || null)}
-              >
-                <option value="">请选择评审任务</option>
-                {reviewRuns.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    #{row.id} · {row.run_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="mini-list">
-              {reviewRuns.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <strong>{row.run_name}</strong>
-                  <span>{row.review_mode} · {row.status}</span>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">评审结果</p>
-                <h3>{selectedReviewRun ? selectedReviewRun.run_name : "等待选择评审任务"}</h3>
-              </div>
-              <span className="badge">{reviewIssues.length} 条问题</span>
-            </div>
-            <div className="stack">
-              <div className="info-block">
-                <strong>综合结论</strong>
-                <p>
-                  {selectedReviewRun
-                    ? `状态：${selectedReviewRun.status}，模拟评分：${selectedReviewRun.simulated_score ?? "--"}，阻塞问题：${selectedReviewRun.blocking_issue_count}`
-                    : "先创建或选择一个评审任务。"}
-                </p>
-                <div className="inline-actions">
-                  <button
-                    className="ghost-button"
-                    disabled={!token || !selectedReviewRun || Boolean(busyLabel) || selectedReviewRun.blocking_issue_count > 0 || selectedReviewRun.status === "approved"}
-                    onClick={() => void handleConfirmReviewRunPass()}
-                    type="button"
-                  >
-                    {selectedReviewRun?.status === "approved" ? "已确认通过" : "确认评审通过"}
-                  </button>
-                </div>
-              </div>
-              {reviewIssues.length ? (
-                <>
-                  <div className={`message-box ${blockingIssues > 0 ? "message-warning" : "message-success"}`}>
-                    <strong>{blockingIssues > 0 ? "存在需打回问题" : "当前无阻塞问题"}</strong>
-                    <p>
-                      {blockingIssues > 0
-                        ? `建议优先处理 ${blockingIssues} 个阻塞问题，再进入排版定稿。`
-                        : "可以继续推进排版定稿或投标文件归档。"}
-                    </p>
-                  </div>
-                  <div className="scroll-box">
-                    {reviewIssues.map((issue) => (
-                      <article className="result-card" key={issue.id}>
-                        <header>
-                          <strong>{issue.title}</strong>
-                          <span>
-                            {issue.severity} · {issue.category} · {issue.is_blocking ? "阻塞" : "提示"}
-                          </span>
-                        </header>
-                        <p>{issue.detail}</p>
-                        <div className="inline-actions">
-                          <span className="badge">{issue.status}</span>
-                          <button
-                            className="ghost-button"
-                            disabled={!token || Boolean(busyLabel) || issue.generated_section_id === null || issue.status === "resolved"}
-                            onClick={() => void handleRemediateReviewIssue(issue.id)}
-                            type="button"
-                          >
-                            {issue.generated_section_id === null ? "仅提示" : issue.status === "resolved" ? "已重写" : "打回重写"}
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="info-block">
-                  <strong>暂无问题单</strong>
-                  <p>执行评审后，这里会展示合规、评分、废标分析等问题清单。</p>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      </section>
-    );
-  }
-
-  function renderLayoutModule() {
-    return (
-      <section className="workspace-stack">
-        <div className="workspace-grid workspace-grid-2">
-          <form className="surface-card stack" onSubmit={handleCreateLayoutJob}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">排版定稿</p>
-                <h3>Layout</h3>
-              </div>
-              <span className="badge">{layoutJobs.length}</span>
-            </div>
-            <label>
-              任务名
-              <input value={layoutJobName} onChange={(event) => setLayoutJobName(event.target.value)} />
-            </label>
-            <label>
-              模板
-              <input value={layoutTemplateName} onChange={(event) => setLayoutTemplateName(event.target.value)} />
-            </label>
-            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-              创建排版任务
-            </button>
-            <label>
-              查看排版
-              <select
-                value={selectedLayoutJobId ?? ""}
-                onChange={(event) => setSelectedLayoutJobId(Number(event.target.value) || null)}
-              >
-                <option value="">请选择排版任务</option>
-                {layoutJobs.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    #{row.id} · {row.job_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="mini-list">
-              {layoutJobs.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <strong>{row.job_name}</strong>
-                  <span>{row.template_name}</span>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">排版输出</p>
-                <h3>{selectedLayoutJob ? selectedLayoutJob.job_name : "等待选择排版任务"}</h3>
-              </div>
-              <span className="badge">{renderedOutputs.length} 个输出</span>
-            </div>
-            <div className="stack">
-              <div className="info-block">
-                <strong>排版状态</strong>
-                <p>
-                  {selectedLayoutJob
-                    ? `模板：${selectedLayoutJob.template_name}，状态：${selectedLayoutJob.status}`
-                    : "先创建或选择一个排版任务。"}
-                </p>
-              </div>
-              {renderedOutputs.length ? (
-                <div className="scroll-box">
-                  {renderedOutputs.map((output) => (
-                    <article className="result-card" key={output.id}>
-                      <header>
-                        <strong>{output.output_type.toUpperCase()}</strong>
-                        <span>{output.version_tag}</span>
-                      </header>
-                      <p>{output.storage_path}</p>
-                      <div className="inline-actions">
-                        <button
-                          className="ghost-button"
-                          disabled={!token || Boolean(busyLabel)}
-                          onClick={() => void handleDownloadRenderedOutput(output.id, output.version_tag, output.output_type)}
-                          type="button"
-                        >
-                          下载产物
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="info-block">
-                  <strong>暂无导出文件</strong>
-                  <p>排版完成后，这里会显示输出文件路径和版本号。</p>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      </section>
-    );
-  }
-
-  function renderBidManagementModule() {
-    return (
-      <section className="workspace-stack">
-        <div className="workspace-grid workspace-grid-2">
-          <form className="surface-card stack" onSubmit={handleCreateSubmissionRecord}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">标书管理</p>
-                <h3>Bid Management</h3>
-              </div>
-              <span className="badge">{submissionRecords.length}</span>
-            </div>
-            <label>
-              标题
-              <input value={submissionTitle} onChange={(event) => setSubmissionTitle(event.target.value)} />
-            </label>
-            <label>
-              状态
-              <select value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value)}>
-                <option value="draft">草稿</option>
-                <option value="ready_for_submission">待提交</option>
-                <option value="submitted">已提交</option>
-                <option value="won">已中标</option>
-                <option value="lost">未中标</option>
-                <option value="archived">已归档</option>
-              </select>
-            </label>
-            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-              创建管理记录
-            </button>
-            <form className="stack" onSubmit={handleApplySubmissionFilters}>
-              <label>
-                状态筛选
-                <select value={submissionFilterStatus} onChange={(event) => setSubmissionFilterStatus(event.target.value)}>
-                  <option value="all">全部状态</option>
-                  <option value="draft">草稿</option>
-                  <option value="ready_for_submission">待提交</option>
-                  <option value="submitted">已提交</option>
-                  <option value="won">已中标</option>
-                  <option value="lost">未中标</option>
-                  <option value="archived">已归档</option>
-                </select>
-              </label>
-              <label>
-                关键词
-                <input value={submissionFilterQuery} onChange={(event) => setSubmissionFilterQuery(event.target.value)} placeholder="按标题筛选" />
-              </label>
-              <div className="two-column">
-                <label>
-                  创建起始
-                  <input type="date" value={submissionCreatedFrom} onChange={(event) => setSubmissionCreatedFrom(event.target.value)} />
-                </label>
-                <label>
-                  创建截止
-                  <input type="date" value={submissionCreatedTo} onChange={(event) => setSubmissionCreatedTo(event.target.value)} />
-                </label>
-              </div>
-              <div className="inline-actions">
-                <button className="ghost-button" type="button" onClick={() => void handleResetSubmissionFilters()}>重置筛选</button>
-                <button className="ghost-button" disabled={!token || Boolean(busyLabel)} type="submit">应用筛选</button>
-              </div>
-            </form>
-            <div className="mini-list">
-              {submissionRecords.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <strong>{row.title}</strong>
-                  <span>{row.status}</span>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <section className="surface-card">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">管理清单</p>
-                <h3>生命周期与回灌</h3>
-              </div>
-              <span className="badge">{submissionRecords.length} 条</span>
-            </div>
-            <div className="stack">
-              {submissionRecords.length ? (
-                <div className="scroll-box">
-                  {submissionRecords.map((row) => (
-                    <article className="result-card" key={row.id}>
-                      <header>
-                        <strong>{row.title}</strong>
-                        <span>
-                          {row.status} · {formatDate(row.created_at)}
-                        </span>
-                      </header>
-                      <p>
-                        {row.status === "won"
-                          ? "可回灌为优秀标书样本。"
-                          : "可回灌为历史投标资料，供后续项目复用。"}
-                      </p>
-                      <div className="inline-actions">
-                        <button
-                          className="ghost-button"
-                          disabled={!token || Boolean(busyLabel) || row.status === "draft"}
-                          onClick={() => void handleFeedSubmissionRecordToLibrary(row.id)}
-                          type="button"
-                        >
-                          {row.status === "won" ? "回灌优秀标书" : "回灌资料库"}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="info-block">
-                  <strong>暂无符合条件的记录</strong>
-                  <p>创建标书管理记录后，可按状态、关键词和时间范围筛选并一键回灌到资料库。</p>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      </section>
-    );
   }
 
   return (
