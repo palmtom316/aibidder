@@ -1,5 +1,7 @@
 import type { LayoutJob, RenderedOutput } from "../../lib/api";
 import type { FormSubmitHandler, StateSetter } from "./shared";
+import { ModuleIntro } from "./module-intro";
+import { formatJobStatus, formatOutputType, formatStoragePath } from "./utils";
 
 type LayoutFinalizeViewProps = {
   layoutJobs: LayoutJob[];
@@ -36,28 +38,38 @@ export function LayoutFinalizeView({
 }: LayoutFinalizeViewProps) {
   return (
     <section className="workspace-stack">
+      <ModuleIntro
+        title="排版导出"
+        description="套用企业模板、核对版式和封签信息，导出可提交的最终文件。"
+        metrics={[
+          { label: "排版任务", value: layoutJobs.length },
+          { label: "导出成果", value: renderedOutputs.length },
+          { label: "当前状态", value: selectedLayoutJob ? formatJobStatus(selectedLayoutJob.status) : "未开始" },
+        ]}
+      />
+
       <div className="workspace-grid workspace-grid-2">
         <form className="surface-card stack" onSubmit={handleCreateLayoutJob}>
           <div className="panel-header compact">
             <div>
-              <p className="eyebrow">排版定稿</p>
-              <h3>Layout</h3>
+              <p className="eyebrow">排版任务</p>
+              <h3>创建排版导出任务</h3>
             </div>
-            <span className="badge">{layoutJobs.length}</span>
+            <span className="badge">{layoutJobs.length} 条</span>
           </div>
           <label>
-            任务名
+            任务名称
             <input value={layoutJobName} onChange={(event) => setLayoutJobName(event.target.value)} />
           </label>
           <label>
-            模板
+            套用模板
             <input value={layoutTemplateName} onChange={(event) => setLayoutTemplateName(event.target.value)} />
           </label>
           <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-            创建排版任务
+            开始排版导出
           </button>
           <label>
-            查看排版
+            查看排版任务
             <select
               value={selectedLayoutJobId ?? ""}
               onChange={(event) => void setSelectedLayoutJobId(Number(event.target.value) || null)}
@@ -83,17 +95,17 @@ export function LayoutFinalizeView({
         <section className="surface-card">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">排版输出</p>
+              <p className="eyebrow">导出成果</p>
               <h3>{selectedLayoutJob ? selectedLayoutJob.job_name : "等待选择排版任务"}</h3>
             </div>
-            <span className="badge">{renderedOutputs.length} 个输出</span>
+            <span className="badge">{renderedOutputs.length} 份</span>
           </div>
           <div className="stack">
             <div className="info-block">
               <strong>排版状态</strong>
               <p>
                 {selectedLayoutJob
-                  ? `模板：${selectedLayoutJob.template_name}，状态：${selectedLayoutJob.status}`
+                  ? `模板：${selectedLayoutJob.template_name}，状态：${formatJobStatus(selectedLayoutJob.status)}`
                   : "先创建或选择一个排版任务。"}
               </p>
             </div>
@@ -102,10 +114,10 @@ export function LayoutFinalizeView({
                 {renderedOutputs.map((output) => (
                   <article className="result-card" key={output.id}>
                     <header>
-                      <strong>{output.output_type.toUpperCase()}</strong>
+                      <strong>{formatOutputType(output.output_type)}</strong>
                       <span>{output.version_tag}</span>
                     </header>
-                    <p>{output.storage_path}</p>
+                    <p>{`已生成文件：${formatStoragePath(output.storage_path)}`}</p>
                     <div className="inline-actions">
                       <button
                         className="ghost-button"
@@ -113,7 +125,7 @@ export function LayoutFinalizeView({
                         onClick={() => void handleDownloadRenderedOutput(output.id, output.version_tag, output.output_type)}
                         type="button"
                       >
-                        下载产物
+                        下载导出文件
                       </button>
                     </div>
                   </article>

@@ -1,6 +1,7 @@
 import type { SubmissionRecord } from "../../lib/api";
 import type { FormSubmitHandler, VoidAction } from "./shared";
-import { formatDate } from "./utils";
+import { ModuleIntro } from "./module-intro";
+import { formatDate, formatSubmissionStatus } from "./utils";
 
 type BidManagementViewProps = {
   submissionRecords: SubmissionRecord[];
@@ -49,34 +50,53 @@ export function BidManagementView({
 }: BidManagementViewProps) {
   return (
     <section className="workspace-stack">
+      <ModuleIntro
+        title="项目归档"
+        description="登记投标结果、归档已提交文件，并把可复用内容沉淀到后续项目。"
+        metrics={[
+          { label: "归档记录", value: submissionRecords.length },
+          { label: "当前状态", value: formatSubmissionStatus(submissionStatus || "draft") },
+          { label: "筛选条件", value: submissionFilterStatus === "all" ? "全部状态" : formatSubmissionStatus(submissionFilterStatus) },
+        ]}
+      />
+
       <div className="workspace-grid workspace-grid-2">
-        <form className="surface-card stack" onSubmit={handleCreateSubmissionRecord}>
+        <section className="surface-card stack">
           <div className="panel-header compact">
             <div>
-              <p className="eyebrow">标书管理</p>
-              <h3>Bid Management</h3>
+              <p className="eyebrow">归档登记</p>
+              <h3>新增项目记录</h3>
             </div>
-            <span className="badge">{submissionRecords.length}</span>
+            <span className="badge">{submissionRecords.length} 条</span>
           </div>
-          <label>
-            标题
-            <input value={submissionTitle} onChange={(event) => setSubmissionTitle(event.target.value)} />
-          </label>
-          <label>
-            状态
-            <select value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value)}>
-              <option value="draft">草稿</option>
-              <option value="ready_for_submission">待提交</option>
-              <option value="submitted">已提交</option>
-              <option value="won">已中标</option>
-              <option value="lost">未中标</option>
-              <option value="archived">已归档</option>
-            </select>
-          </label>
-          <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-            创建管理记录
-          </button>
+          <form className="stack" onSubmit={handleCreateSubmissionRecord}>
+            <label>
+              记录标题
+              <input value={submissionTitle} onChange={(event) => setSubmissionTitle(event.target.value)} />
+            </label>
+            <label>
+              当前状态
+              <select value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value)}>
+                <option value="draft">草稿</option>
+                <option value="ready_for_submission">待提交</option>
+                <option value="submitted">已提交</option>
+                <option value="won">已中标</option>
+                <option value="lost">未中标</option>
+                <option value="archived">已归档</option>
+              </select>
+            </label>
+            <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
+              新增归档记录
+            </button>
+          </form>
+
           <form className="stack" onSubmit={handleApplySubmissionFilters}>
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">筛选</p>
+                <h3>查找归档记录</h3>
+              </div>
+            </div>
             <label>
               状态筛选
               <select value={submissionFilterStatus} onChange={(event) => setSubmissionFilterStatus(event.target.value)}>
@@ -104,25 +124,30 @@ export function BidManagementView({
               </label>
             </div>
             <div className="inline-actions">
-              <button className="ghost-button" type="button" onClick={() => void handleResetSubmissionFilters()}>重置筛选</button>
-              <button className="ghost-button" disabled={!token || Boolean(busyLabel)} type="submit">应用筛选</button>
+              <button className="ghost-button" type="button" onClick={() => void handleResetSubmissionFilters()}>
+                重置筛选
+              </button>
+              <button className="ghost-button" disabled={!token || Boolean(busyLabel)} type="submit">
+                应用筛选
+              </button>
             </div>
           </form>
+
           <div className="mini-list">
             {submissionRecords.map((row) => (
               <div className="mini-item" key={row.id}>
                 <strong>{row.title}</strong>
-                <span>{row.status}</span>
+                <span>{formatSubmissionStatus(row.status)}</span>
               </div>
             ))}
           </div>
-        </form>
+        </section>
 
         <section className="surface-card">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">管理清单</p>
-              <h3>生命周期与回灌</h3>
+              <p className="eyebrow">归档清单</p>
+              <h3>结果回灌与后续复用</h3>
             </div>
             <span className="badge">{submissionRecords.length} 条</span>
           </div>
@@ -134,13 +159,13 @@ export function BidManagementView({
                     <header>
                       <strong>{row.title}</strong>
                       <span>
-                        {row.status} · {formatDate(row.created_at)}
+                        {formatSubmissionStatus(row.status)} · {formatDate(row.created_at)}
                       </span>
                     </header>
                     <p>
                       {row.status === "won"
-                        ? "可回灌为优秀标书样本。"
-                        : "可回灌为历史投标资料，供后续项目复用。"}
+                        ? "这条记录可以沉淀为优秀标书样本。"
+                        : "这条记录可以回灌到资料准备中，供后续项目继续复用。"}
                     </p>
                     <div className="inline-actions">
                       <button
@@ -149,7 +174,7 @@ export function BidManagementView({
                         onClick={() => void handleFeedSubmissionRecordToLibrary(row.id)}
                         type="button"
                       >
-                        {row.status === "won" ? "回灌优秀标书" : "回灌资料库"}
+                        {row.status === "won" ? "沉淀为优秀标书" : "回灌到资料准备"}
                       </button>
                     </div>
                   </article>
@@ -158,7 +183,7 @@ export function BidManagementView({
             ) : (
               <div className="info-block">
                 <strong>暂无符合条件的记录</strong>
-                <p>创建标书管理记录后，可按状态、关键词和时间范围筛选并一键回灌到资料库。</p>
+                <p>登记投标结果后，可按状态、关键词和时间范围筛选并一键回灌到资料准备。</p>
               </div>
             )}
           </div>

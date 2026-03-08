@@ -38,6 +38,7 @@ class Settings(BaseSettings):
         "http://localhost:13000,"
         "http://127.0.0.1:13000"
     )
+    cors_allowed_origin_regex: str = r"https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
 
     model_provider: str = "openai_compatible"
     default_model_name: str = "gpt-4.1-mini"

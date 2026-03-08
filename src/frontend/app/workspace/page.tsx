@@ -1,5 +1,15 @@
 import { redirect } from "next/navigation";
 
-export default function WorkspaceIndexPage() {
-  redirect("/workspace/knowledge-library");
+export default async function WorkspaceIndexPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string }>;
+}) {
+  const { projectId } = await searchParams;
+
+  if (projectId) {
+    redirect(`/?projectId=${encodeURIComponent(projectId)}`);
+  }
+
+  redirect("/");
 }

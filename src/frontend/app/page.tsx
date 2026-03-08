@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   ApiError,
@@ -61,7 +61,6 @@ import {
   rebuildHistoricalReuseUnits,
   EvidenceSearchResult,
   EvidenceUnit,
-  getWorkbenchOverview,
   listEquipmentAssets,
   listPersonnelAssets,
   listProjectCredentials,
@@ -80,12 +79,15 @@ import {
   listRenderedOutputs,
   listReviewIssues,
   remediateReviewIssue,
-  WorkbenchOverview,
   RenderedOutput,
   ReviewIssue,
 } from "../lib/api";
+import { AppShell } from "../components/app-shell";
 import { CopilotPanel } from "../components/copilot-panel";
+import { CopilotTrigger } from "../components/copilot-trigger";
+import { HomeContinueCard } from "../components/home-continue-card";
 import { HeroPanel } from "../components/hero-panel";
+import { TaskEntryCard } from "../components/task-entry-card";
 import { SettingsDrawer } from "../components/settings-drawer";
 import { WorkspaceSidebar } from "../components/workspace-sidebar";
 import {
@@ -96,7 +98,19 @@ import {
   LayoutFinalizeView,
   TenderAnalysisView,
 } from "../components/workspace-views";
-import { clearStoredToken, getStoredToken, setStoredToken } from "../lib/session";
+import {
+  DEFAULT_RESUME_MODULE,
+  PROJECT_ID_QUERY_PARAM,
+  WORKSPACE_MODULES,
+  buildModuleHref,
+  isResumableModule,
+  lastVisitedModuleStorageKey,
+  parseProjectIdParam,
+  type WorkspaceModule,
+} from "../components/workspace-views/shared";
+import { formatLibraryCategory, getResumeCardState } from "../components/workspace-views/utils";
+import { shouldCollapseCopilotOnInteraction, isNarrowViewport } from "../lib/copilot-visibility";
+import { clearStoredToken, getStorageItem, getStoredToken, setStorageItem, setStoredToken } from "../lib/session";
 
 type RuntimeFormState = {
   provider: string;
@@ -115,42 +129,18 @@ const EMPTY_MODELS: RuntimeSettings["default_models"] = {
   adjudicator_role: "deepseek-ai/DeepSeek-R1",
 };
 
-export type WorkspaceModule =
-  | "knowledge-library"
-  | "tender-analysis"
-  | "bid-generation"
-  | "bid-review"
-  | "layout-finalize"
-  | "bid-management";
-
 type CopilotMessage = {
   id: string;
   role: "assistant" | "user";
   text: string;
 };
 
-const WORKSPACE_MODULES: Array<{
-  id: WorkspaceModule;
-  label: string;
-  hint: string;
-  shortLabel: string;
-}> = [
-    { id: "knowledge-library", label: "投标资料库", hint: "历史标书、资质业绩、敏感信息清洗", shortLabel: "库" },
-    { id: "tender-analysis", label: "标书分析", hint: "招标文件拆解与原文对照", shortLabel: "析" },
-    { id: "bid-generation", label: "标书生成", hint: "框架审批与分章节编写", shortLabel: "生" },
-    { id: "bid-review", label: "标书评审", hint: "评审、模拟评分与废标分析", shortLabel: "审" },
-    { id: "layout-finalize", label: "排版定稿", hint: "排版、导出最终打印版", shortLabel: "版" },
-    { id: "bid-management", label: "标书管理", hint: "标书存档、中标记录与回灌", shortLabel: "管" },
-  ];
-
-function modulePath(module: WorkspaceModule) {
-  return `/workspace/${module}`;
-}
-
 export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule } = {}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectIdFromUrl = parseProjectIdParam(searchParams.get(PROJECT_ID_QUERY_PARAM));
   const [token, setToken] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>("请先登录以开始本地联调。");
+  const [message, setMessage] = useState<string>("请先登录，再查看项目和投标资料。");
   const [busyLabel, setBusyLabel] = useState<string>("");
   const [loginEmail, setLoginEmail] = useState("admin@example.com");
   const [loginPassword, setLoginPassword] = useState("admin123456");
@@ -177,7 +167,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [evidenceResults, setEvidenceResults] = useState<EvidenceSearchResult[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [documentEvidenceUnits, setDocumentEvidenceUnits] = useState<EvidenceUnit[]>([]);
-  const [workbenchOverview, setWorkbenchOverview] = useState<WorkbenchOverview | null>(null);
   const [knowledgeBaseEntries, setKnowledgeBaseEntries] = useState<KnowledgeBaseEntry[]>([]);
   const [decompositionRuns, setDecompositionRuns] = useState<DecompositionRun[]>([]);
   const [selectedDecompositionRunId, setSelectedDecompositionRunId] = useState<number | null>(null);
@@ -249,7 +238,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [leakageForbiddenTerms, setLeakageForbiddenTerms] = useState("");
   const [leakageReuseUnitIds, setLeakageReuseUnitIds] = useState("");
   const [leakageResult, setLeakageResult] = useState<{ ok: boolean; matched_terms: string[] } | null>(null);
-  const [activeModule, setActiveModule] = useState<WorkspaceModule>(forcedModule ?? "knowledge-library");
+  const [activeModule, setActiveModule] = useState<WorkspaceModule>(forcedModule ?? "home");
+  const [resumeModule, setResumeModule] = useState<Exclude<WorkspaceModule, "home"> | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -326,9 +316,14 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     };
   }
 
-  function activateModule(module: WorkspaceModule) {
+  function selectProject(projectId: number | null) {
+    setSelectedProjectId(projectId);
+    router.replace(buildModuleHref(activeModule, projectId));
+  }
+
+  function activateModule(module: WorkspaceModule, projectId = selectedProjectId) {
     setActiveModule(module);
-    router.push(modulePath(module));
+    router.push(buildModuleHref(module, projectId));
   }
 
   useEffect(() => {
@@ -345,11 +340,67 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   }, [forcedModule]);
 
   useEffect(() => {
+    if (projectIdFromUrl === null || projects.length === 0) {
+      return;
+    }
+
+    if (!projects.some((project) => project.id === projectIdFromUrl)) {
+      return;
+    }
+
+    setSelectedProjectId((current) => (current === projectIdFromUrl ? current : projectIdFromUrl));
+  }, [projectIdFromUrl, projects]);
+
+  useEffect(() => {
     if (!token) {
       return;
     }
     void hydrateConsole(token);
   }, [token]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setResumeModule(null);
+      return;
+    }
+
+    const storedModule = getStorageItem(lastVisitedModuleStorageKey(selectedProjectId));
+    setResumeModule(isResumableModule(storedModule) ? storedModule : null);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedProjectId || activeModule === "home") {
+      return;
+    }
+
+    setStorageItem(lastVisitedModuleStorageKey(selectedProjectId), activeModule);
+    setResumeModule(activeModule);
+  }, [activeModule, selectedProjectId]);
+
+  useEffect(() => {
+    if (!copilotOpen) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (shouldCollapseCopilotOnInteraction({ open: copilotOpen, narrowViewport: isNarrowViewport(window), event })) {
+        setCopilotOpen(false);
+      }
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCopilotOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [copilotOpen]);
 
   useEffect(() => {
     if (!token || selectedProjectId === null) {
@@ -361,7 +412,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
   useEffect(() => {
     if (!token) {
-      setWorkbenchOverview(null);
       setKnowledgeBaseEntries([]);
       setQualifications([]);
       setPersonnelAssets([]);
@@ -483,7 +533,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
   async function hydrateConsole(activeToken: string) {
     try {
-      setBusyLabel("正在加载控制台数据");
+      setBusyLabel("正在整理项目和资料");
       const [settingsPayload, projectRows, historicalRows] = await Promise.all([
         getRuntimeSettings(activeToken),
         listProjects(activeToken),
@@ -498,9 +548,17 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       }));
       setProjects(projectRows);
       setHistoricalBids(historicalRows);
-      setSelectedProjectId((current) => current ?? projectRows[0]?.id ?? null);
+      setSelectedProjectId((current) => {
+        if (current !== null && projectRows.some((project) => project.id === current)) {
+          return current;
+        }
+        if (projectIdFromUrl !== null && projectRows.some((project) => project.id === projectIdFromUrl)) {
+          return projectIdFromUrl;
+        }
+        return projectRows[0]?.id ?? null;
+      });
       setSelectedHistoricalBidId((current) => current ?? historicalRows[0]?.id ?? null);
-      setMessage("控制台已同步到本地后端。");
+      setMessage("项目和资料已同步完成。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -527,7 +585,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   ) {
     try {
       const [
-        overview,
         libraryRows,
         qualificationRows,
         personnelRows,
@@ -539,7 +596,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         layoutRows,
         submissionRows,
       ] = await Promise.all([
-        getWorkbenchOverview(activeToken, projectId),
         listKnowledgeBaseEntries(activeToken, projectId, libraryFilters),
         listQualifications(activeToken),
         listPersonnelAssets(activeToken),
@@ -551,7 +607,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         listLayoutJobs(activeToken, projectId),
         listSubmissionRecords(activeToken, projectId, submissionFilters),
       ]);
-      setWorkbenchOverview(overview);
       setKnowledgeBaseEntries(libraryRows);
       setQualifications(qualificationRows);
       setPersonnelAssets(personnelRows);
@@ -601,7 +656,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       const response = await login(loginEmail, loginPassword);
       setStoredToken(response.access_token);
       setToken(response.access_token);
-      setMessage("登录成功，本地联调环境已解锁。");
+      setMessage("登录成功，可以开始处理项目了。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -619,7 +674,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       const project = await createProject(token, projectName.trim());
       const nextProjects = [...projects, project].sort((left, right) => left.id - right.id);
       setProjects(nextProjects);
-      setSelectedProjectId(project.id);
+      selectProject(project.id);
       setProjectName("");
       setMessage(`项目 ${project.name} 已创建。`);
     } catch (error) {
@@ -664,7 +719,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         owner_name: libraryOwnerName.trim(),
       });
       await refreshWorkbench(token, selectedProjectId);
-      setMessage("投标资料库已新增一条入库记录。");
+      setMessage("资料台账已新增一条入库记录。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -696,7 +751,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     try {
       setBusyLabel("正在筛选投标资料");
       await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setMessage("投标资料库筛选结果已刷新。");
+      setMessage("资料台账筛选结果已刷新。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -710,9 +765,9 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在筛选标书管理记录");
+      setBusyLabel("正在筛选项目归档记录");
       await refreshWorkbench(token, selectedProjectId ?? undefined, buildLibraryFilters(), buildSubmissionFilters());
-      setMessage("标书管理筛选结果已刷新。");
+      setMessage("项目归档筛选结果已刷新。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -729,13 +784,13 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在重置标书管理筛选");
+      setBusyLabel("正在重置项目归档筛选");
       setSubmissionFilterStatus("all");
       setSubmissionFilterQuery("");
       setSubmissionCreatedFrom("");
       setSubmissionCreatedTo("");
       await refreshWorkbench(token, selectedProjectId ?? undefined, buildLibraryFilters(), {});
-      setMessage("已重置标书管理筛选条件。");
+      setMessage("已重置项目归档筛选条件。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -758,7 +813,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       setLibraryCreatedFrom("");
       setLibraryCreatedTo("");
       await refreshWorkbench(token, selectedProjectId ?? undefined, {});
-      setMessage("已重置投标资料库筛选条件。");
+      setMessage("已重置资料台账筛选条件。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -926,14 +981,14 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在创建标书分析任务");
+      setBusyLabel("正在创建招标分析任务");
       await createDecompositionRun(token, {
         project_id: selectedProjectId,
         source_document_id: selectedDocumentId ?? undefined,
         run_name: decompositionRunName.trim(),
       });
       await refreshWorkbench(token, selectedProjectId);
-      setMessage("标书分析任务已加入工作台。");
+      setMessage("招标分析任务已加入工作台。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -947,7 +1002,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在创建标书生成任务");
+      setBusyLabel("正在创建内容编写任务");
       const created = await createGenerationJob(token, {
         project_id: selectedProjectId,
         source_document_id: selectedDocumentId ?? undefined,
@@ -956,7 +1011,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       });
       await refreshWorkbench(token, selectedProjectId);
       setSelectedGenerationJobId(created.id);
-      setMessage("标书生成任务已加入工作台。");
+      setMessage("内容编写任务已加入工作台。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -986,7 +1041,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在创建标书评审任务");
+      setBusyLabel("正在创建校核定稿任务");
       const created = await createReviewRun(token, {
         project_id: selectedProjectId,
         source_document_id: selectedDocumentId ?? undefined,
@@ -995,7 +1050,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       });
       await refreshWorkbench(token, selectedProjectId);
       setSelectedReviewRunId(created.id);
-      setMessage("标书评审任务已加入工作台。");
+      setMessage("校核定稿任务已加入工作台。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1009,7 +1064,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在创建排版定稿任务");
+      setBusyLabel("正在创建排版导出任务");
       const created = await createLayoutJob(token, {
         project_id: selectedProjectId,
         source_document_id: selectedDocumentId ?? undefined,
@@ -1018,7 +1073,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       });
       await refreshWorkbench(token, selectedProjectId);
       setSelectedLayoutJobId(created.id);
-      setMessage("排版定稿任务已加入工作台。");
+      setMessage("排版导出任务已加入工作台。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1032,7 +1087,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在创建标书管理记录");
+      setBusyLabel("正在创建项目归档记录");
       await createSubmissionRecord(token, {
         project_id: selectedProjectId,
         source_document_id: selectedDocumentId ?? undefined,
@@ -1040,7 +1095,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         status: submissionStatus.trim(),
       });
       await refreshWorkbench(token, selectedProjectId);
-      setMessage("标书管理记录已加入工作台。");
+      setMessage("项目归档记录已加入工作台。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1056,7 +1111,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       setBusyLabel("正在确认评审通过");
       await confirmReviewRunPass(token, selectedReviewRunId);
       await refreshWorkbench(token, selectedProjectId);
-      setMessage("评审已确认通过，可进入排版定稿。");
+      setMessage("校核已确认通过，可进入排版导出。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1134,7 +1189,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       const entry = await feedSubmissionRecordToLibrary(token, recordId);
       await refreshWorkbench(token, selectedProjectId ?? undefined);
       activateModule("knowledge-library");
-      setMessage(`标书记录 ${recordId} 已回灌到投标资料库（${entry.category}）。`);
+      setMessage(`标书记录 ${recordId} 已回灌到资料台账（${formatLibraryCategory(entry.category)}）。`);
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1333,7 +1388,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     setProjects([]);
     setDocuments([]);
     setHistoricalBids([]);
-    setWorkbenchOverview(null);
     setKnowledgeBaseEntries([]);
     setDecompositionRuns([]);
     setGenerationJobs([]);
@@ -1359,34 +1413,34 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
     if (normalized.includes("资料") || normalized.includes("入库") || normalized.includes("上传")) {
       activateModule("knowledge-library");
-      return `${projectLabel}我已经切到「投标资料库」模块。你可以上传历史标书、资质文件等，并进行敏感信息清洗。`;
+      return `${projectLabel}我已经切到「资料准备」。你可以先上传招标文件，再补充资质、人员、设备和业绩资料。`;
     }
     if (normalized.includes("分析") || normalized.includes("拆解") || normalized.includes("招标")) {
       activateModule("tender-analysis");
-      return `${projectLabel}我已经切到「标书分析」模块。上传招标文件 PDF 后，可进行七类要点拆解并与原文对照。`;
+      return `${projectLabel}我已经切到「招标分析」。这里会拆解资格条件、评分点和风险条款，并支持与原文对照。`;
     }
     if (normalized.includes("生成") || normalized.includes("编写")) {
       activateModule("bid-generation");
-      return `${projectLabel}我已经切到「标书生成」模块。AI 会先生成标书框架，审批通过后分章节编写初稿。`;
+      return `${projectLabel}我已经切到「内容编写」。系统会先生成章节框架，再逐章补齐投标内容。`;
     }
     if (normalized.includes("评审") || normalized.includes("检测") || normalized.includes("打分")) {
       activateModule("bid-review");
-      return `${projectLabel}我已经切到「标书评审」模块。这里可以进行多维评审、模拟评分和废标分析。`;
+      return `${projectLabel}我已经切到「校核定稿」。这里可以继续检查评分风险、合规问题和废标隐患。`;
     }
     if (normalized.includes("排版") || normalized.includes("定稿")) {
       activateModule("layout-finalize");
-      return `${projectLabel}我已经切到「排版定稿」模块。将合格标书按模板排版并导出打印版。`;
+      return `${projectLabel}我已经切到「排版导出」。可以继续整理版式，并导出送审文件。`;
     }
     if (normalized.includes("管理") || normalized.includes("中标") || normalized.includes("归档")) {
       activateModule("bid-management");
-      return `${projectLabel}我已经切到「标书管理」模块。查看标书文件、记录中标情况，或将优秀标书回灌资料库。`;
+      return `${projectLabel}我已经切到「项目归档」。可以登记结果、归档成果，并沉淀后续复用资料。`;
     }
     if (normalized.includes("设置") || normalized.includes("api") || normalized.includes("模型")) {
       setSettingsOpen(true);
-      return "我已打开设置抽屉。运行时 Provider、Base URL、API Key 和角色模型都收纳在这里。";
+      return "我已打开设置。这里可以调整模型服务地址、密钥和各环节默认模型。";
     }
 
-    return `你当前位于「${moduleLabel}」。${projectLabel}如果你愿意，我可以继续帮你解释这个模块的下一步操作，或者帮你跳到投标资料库、标书分析、标书生成、标书评审、排版定稿、标书管理。`;
+    return `你当前位于「${moduleLabel}」。${projectLabel}如果你愿意，我可以继续帮你解释这个模块的下一步操作，或者帮你跳到资料准备、招标分析、内容编写、校核定稿、排版导出、项目归档。`;
   }
 
   function handleCopilotSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1404,33 +1458,37 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   function handleCopilotQuickAction(actionId: string) {
     setCopilotOpen(true);
     switch (actionId) {
+      case "go-home":
+        activateModule("home");
+        appendCopilotMessage("assistant", "已回到首页。你可以从资料准备开始，或继续上次停下的步骤。");
+        break;
       case "go-knowledge-library":
         activateModule("knowledge-library");
-        appendCopilotMessage("assistant", "已切换到「投标资料库」模块。你可以上传文件入库、查看资料、执行敏感信息清洗。");
+        appendCopilotMessage("assistant", "已切换到「资料准备」。你可以上传招标文件，并补齐资质、人员、设备和业绩资料。");
         break;
       case "go-tender-analysis":
         activateModule("tender-analysis");
-        appendCopilotMessage("assistant", "已切换到「标书分析」模块。上传招标 PDF 文件进行七类拆解与原文对照。");
+        appendCopilotMessage("assistant", "已切换到「招标分析」。这里可以继续拆解招标文件并核对原文条款。");
         break;
       case "go-bid-generation":
         activateModule("bid-generation");
-        appendCopilotMessage("assistant", "已切换到「标书生成」模块。AI 先生成框架，审批后分章节编写初稿。");
+        appendCopilotMessage("assistant", "已切换到「内容编写」。建议先确认章节框架，再继续补全章节草稿。");
         break;
       case "go-bid-review":
         activateModule("bid-review");
-        appendCopilotMessage("assistant", "已切换到「标书评审」模块。这里可以进行多维评审、模拟评分与废标分析。");
+        appendCopilotMessage("assistant", "已切换到「校核定稿」。这里可以继续检查评分风险和废标隐患。");
         break;
       case "go-layout-finalize":
         activateModule("layout-finalize");
-        appendCopilotMessage("assistant", "已切换到「排版定稿」模块。将合格标书按模板排版，导出最终打印版。");
+        appendCopilotMessage("assistant", "已切换到「排版导出」。可以继续核对版式，并导出最终送审文件。");
         break;
       case "go-bid-management":
         activateModule("bid-management");
-        appendCopilotMessage("assistant", "已切换到「标书管理」模块。查看标书文件、记录中标情况，或回灌优秀标书。");
+        appendCopilotMessage("assistant", "已切换到「项目归档」。可以登记结果、归档成果，并回灌优质资料。");
         break;
       case "open-settings":
         setSettingsOpen(true);
-        appendCopilotMessage("assistant", "已打开设置抽屉。所有技术性配置都收纳在设置中。");
+        appendCopilotMessage("assistant", "已打开设置。这里可以检查模型服务是否可用，并调整默认模型。");
         break;
       default:
         appendCopilotMessage("assistant", "我已记录你的意图。你可以继续问我要做什么，或者直接点模块切换。");
@@ -1439,14 +1497,100 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   }
 
   const copilotQuickActions = [
-    { id: "go-knowledge-library", label: "投标资料库" },
-    { id: "go-tender-analysis", label: "标书分析" },
-    { id: "go-bid-generation", label: "标书生成" },
-    { id: "go-bid-review", label: "标书评审" },
-    { id: "go-layout-finalize", label: "排版定稿" },
-    { id: "go-bid-management", label: "标书管理" },
+    { id: "go-home", label: "回到首页" },
+    { id: "go-knowledge-library", label: "资料准备" },
+    { id: "go-tender-analysis", label: "招标分析" },
+    { id: "go-bid-generation", label: "内容编写" },
+    { id: "go-bid-review", label: "校核定稿" },
+    { id: "go-layout-finalize", label: "排版导出" },
+    { id: "go-bid-management", label: "项目归档" },
     { id: "open-settings", label: "打开设置" },
   ];
+
+  function renderHomeWorkspace() {
+    const nextResumeModule = resumeModule ?? DEFAULT_RESUME_MODULE;
+    const nextResumeModuleMeta =
+      WORKSPACE_MODULES.find((module) => module.id === nextResumeModule) ?? WORKSPACE_MODULES[1];
+    const continueTitle = selectedProject ? selectedProject.name : "请先选择本次要处理的项目";
+    const continueStep = selectedProject ? `上次停在：${nextResumeModuleMeta.label}` : "先在左侧选择项目";
+
+    const { detail: continueDetail, cue: continueCue } = getResumeCardState({
+      selectedProject: Boolean(selectedProject),
+      nextResumeModule,
+      nextResumeModuleMeta,
+      documentsCount: documents.length,
+      decompositionProgress: selectedDecompositionRun?.progress_pct ?? null,
+      generationTargetSections: selectedGenerationJob?.target_sections ?? null,
+      reviewBlockingIssues: selectedReviewRun?.blocking_issue_count ?? null,
+      reviewScore: selectedReviewRun?.simulated_score ?? null,
+      hasLayoutJob: Boolean(selectedLayoutJob),
+      renderedOutputCount: renderedOutputs.length,
+      submissionRecordCount: submissionRecords.length,
+    });
+
+    return (
+      <section className="workspace-stack">
+        <HeroPanel
+          projectCount={projects.length}
+          documentCount={documents.length}
+          historicalBidCount={historicalBids.length}
+        />
+
+        <section className="workspace-grid workspace-grid-3">
+          <TaskEntryCard
+            actionLabel="进入资料准备"
+            description="先上传招标文件，再补充资质、人员、设备和业绩资料。"
+            onAction={() => activateModule("knowledge-library")}
+            title="整理投标资料"
+          />
+          <TaskEntryCard
+            actionLabel="进入招标分析"
+            description="快速梳理资格要求、评分点、合同风险和废标条款。"
+            onAction={() => activateModule("tender-analysis")}
+            title="分析招标文件"
+          />
+          <TaskEntryCard
+            actionLabel="进入内容编写"
+            description="按章节生成投标内容，并结合证据与历史经验继续完善。"
+            onAction={() => activateModule("bid-generation")}
+            title="生成投标内容"
+          />
+          <TaskEntryCard
+            actionLabel="进入校核定稿"
+            description="检查评分项、废标风险和关键遗漏，减少提交风险。"
+            onAction={() => activateModule("bid-review")}
+            title="检查评分与废标风险"
+          />
+          <TaskEntryCard
+            actionLabel="进入排版导出"
+            description="整理版式、核对导出成果，准备最终提交材料。"
+            onAction={() => activateModule("layout-finalize")}
+            title="排版并导出"
+          />
+          <TaskEntryCard
+            actionLabel="进入项目归档"
+            description="归档成果、记录状态，并将可复用内容沉淀到后续项目。"
+            onAction={() => activateModule("bid-management")}
+            title="归档与复用"
+          />
+        </section>
+
+        <HomeContinueCard
+          actionLabel={selectedProject ? `继续${nextResumeModuleMeta.label}` : "先选择项目"}
+          cueLabel={continueCue}
+          detail={continueDetail}
+          disabled={!selectedProject}
+          onAction={() => {
+            if (selectedProject) {
+              activateModule(nextResumeModule);
+            }
+          }}
+          stepLabel={continueStep}
+          title={continueTitle}
+        />
+      </section>
+    );
+  }
 
   function renderLoginWorkspace() {
     return (
@@ -1459,10 +1603,10 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         <section className="surface-card surface-card-login">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Access</p>
-              <h3>登录后进入 Copilot 工作区</h3>
+              <p className="eyebrow">开始使用</p>
+              <h3>登录后进入投标工作台</h3>
             </div>
-            <span className="badge">登录必需</span>
+            <span className="badge">需先登录</span>
           </div>
           <div className="workspace-grid workspace-grid-2">
             <form className="stack" onSubmit={handleLogin}>
@@ -1484,14 +1628,14 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
                 />
               </label>
               <button className="primary-button" disabled={Boolean(busyLabel)} type="submit">
-                登录并进入工作区
+                登录并开始处理
               </button>
             </form>
 
             <div className="stack">
               <div className="info-block">
                 <strong>界面原则</strong>
-                <p>左侧切模块，中间只做一件事，右侧 Copilot 默认隐藏，设置全部收纳到抽屉里。</p>
+                <p>左侧切换步骤，中间专注处理当前工作，右侧助手按需打开，设置统一收在抽屉里。</p>
               </div>
               <div className="info-block">
                 <strong>默认账号</strong>
@@ -1499,8 +1643,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
                 <p>`project_manager@example.com` / `manager123456`</p>
               </div>
               <div className="info-block">
-                <strong>Copilot 作用</strong>
-                <p>解释当前模块、提示下一步、代你导航到上传、证据检索、历史复用、招标拆解和生成复核。</p>
+                <strong>助手能帮什么</strong>
+                <p>解释当前步骤、提醒下一步，并帮你快速切到资料上传、证据检索、历史复用、招标拆解、生成和校核。</p>
               </div>
             </div>
           </div>
@@ -1511,6 +1655,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
   function renderActiveModule() {
     switch (activeModule) {
+      case "home":
+        return renderHomeWorkspace();
       case "knowledge-library":
         return (
           <KnowledgeLibraryView
@@ -1632,7 +1778,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             setUploadType={setUploadType}
             token={token}
             uploadType={uploadType}
-            workbenchOverview={workbenchOverview}
           />
         );
       case "tender-analysis":
@@ -1859,39 +2004,46 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             setUploadType={setUploadType}
             token={token}
             uploadType={uploadType}
-            workbenchOverview={workbenchOverview}
           />
         );
     }
   }
 
   return (
-    <main className="chat-shell">
-      <WorkspaceSidebar
-        activeModule={activeModule}
-        busyLabel={busyLabel}
-        collapsed={sidebarCollapsed}
-        message={message}
-        modules={WORKSPACE_MODULES}
-        onLogout={handleLogout}
-        onOpenCopilot={() => setCopilotOpen(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onSelectModule={(moduleId) => activateModule(moduleId as WorkspaceModule)}
-        onSelectProject={(projectId) => setSelectedProjectId(projectId)}
-        onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
-        projects={projects}
-        selectedProjectId={selectedProjectId}
-        sessionReady={Boolean(token)}
-      />
-
-      <section className="chat-main">
-        <header className="workspace-header">
-          <div>
-            <p className="eyebrow">Workspace</p>
-            <h2>{activeModuleMeta.label}</h2>
-            <p className="workspace-subtitle">{activeModuleMeta.hint}</p>
-          </div>
-          <div className="workspace-toolbar">
+    <>
+      <AppShell
+        currentView={activeModule}
+        projectContext={{
+          projectName: selectedProject?.name ?? null,
+          deadlineLabel: "待确认",
+          stageLabel: activeModule === "home" ? "等待选择下一步" : activeModuleMeta.label,
+          reminderLabel: selectedProject
+            ? `当前建议先完成“${activeModule === "home" ? "资料准备" : activeModuleMeta.label}”。`
+            : "请先选择项目，再进入具体投标步骤。",
+        }}
+        showProjectContext={Boolean(token)}
+        sidebar={
+          <WorkspaceSidebar
+            activeModule={activeModule}
+            busyLabel={busyLabel}
+            collapsed={sidebarCollapsed}
+            message={message}
+            modules={WORKSPACE_MODULES}
+            onLogout={handleLogout}
+            onOpenCopilot={() => setCopilotOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onSelectModule={(moduleId) => activateModule(moduleId as WorkspaceModule)}
+            onSelectProject={(projectId) => selectProject(projectId)}
+            onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            sessionReady={Boolean(token)}
+          />
+        }
+        subtitle={activeModuleMeta.hint}
+        title={activeModuleMeta.label}
+        toolbar={
+          <>
             <div className="context-pill">
               <span className="brand-point brand-point-inline" />
               <span>{selectedProject ? selectedProject.name : "未选择项目"}</span>
@@ -1899,14 +2051,14 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             <button className="ghost-button" onClick={() => setSettingsOpen(true)} type="button">
               设置
             </button>
-            <button className="primary-button" onClick={() => setCopilotOpen(true)} type="button">
-              打开 Copilot
+            <button className="primary-button copilot-trigger" onClick={() => setCopilotOpen(true)} type="button">
+              打开助手
             </button>
-          </div>
-        </header>
-
+          </>
+        }
+      >
         {token ? renderActiveModule() : renderLoginWorkspace()}
-      </section>
+      </AppShell>
 
       <SettingsDrawer
         connectivityResult={connectivityResult}
@@ -1952,13 +2104,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         quickActions={copilotQuickActions}
       />
 
-      {!copilotOpen ? (
-        <button className="copilot-fab" onClick={() => setCopilotOpen(true)} type="button">
-          <span className="brand-point brand-point-inline" />
-          Copilot
-        </button>
-      ) : null}
-    </main>
+      {!copilotOpen ? <CopilotTrigger onClick={() => setCopilotOpen(true)} /> : null}
+    </>
   );
 }
 

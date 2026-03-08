@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AIBidder Console",
-  description: "本地联调用于验证 AIBidder 六大模块的前后端与数据库工作流。",
+  title: "AIBidder 投标工作台",
+  description: "面向建筑施工单位招投标工程师的智能投标工作台，帮助整理资料、分析招标文件、编写内容与完成校核定稿。",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",

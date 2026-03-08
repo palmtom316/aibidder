@@ -79,3 +79,21 @@ def test_connectivity_check_validates_selected_model(monkeypatch) -> None:
         "status_code": 200,
         "message": "Model is reachable",
     }
+
+
+def test_cors_allows_localhost_origins_on_any_port() -> None:
+    client = TestClient(app)
+
+    for origin in ("http://127.0.0.1:3202", "http://localhost:3202"):
+        response = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == origin
+        assert response.headers.get("access-control-allow-credentials") == "true"

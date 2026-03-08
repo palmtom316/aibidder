@@ -2,6 +2,8 @@ import type { FormEvent } from "react";
 
 import type { RuntimeConnectivityResult, RuntimeSettings } from "../lib/api";
 
+import { StatusBadge } from "./ui/status-badge";
+
 type RuntimeForm = {
   provider: string;
   apiBaseUrl: string;
@@ -23,6 +25,19 @@ type SettingsDrawerProps = {
   onModelChange: (role: keyof RuntimeSettings["default_models"], value: string) => void;
 };
 
+const ROLE_LABELS: Record<keyof RuntimeSettings["default_models"], string> = {
+  ocr_role: "文件识别模型",
+  decomposition_navigator_role: "招标分析规划模型",
+  decomposition_extractor_role: "条款提取模型",
+  writer_role: "默认写作模型",
+  reviewer_role: "校核模型",
+  adjudicator_role: "结果复核模型",
+};
+
+function getRoleLabel(role: keyof RuntimeSettings["default_models"]) {
+  return ROLE_LABELS[role] ?? role;
+}
+
 export function SettingsDrawer({
   open,
   disabled,
@@ -38,11 +53,12 @@ export function SettingsDrawer({
   return (
     <div className={`settings-drawer-wrap ${open ? "is-open" : ""}`} aria-hidden={!open}>
       <button className="drawer-backdrop" onClick={onClose} type="button" />
-      <aside className="settings-drawer" aria-label="运行时设置">
+      <aside className="settings-drawer" aria-label="模型与服务设置">
         <div className="drawer-header">
           <div>
-            <p className="eyebrow">Settings</p>
-            <h3>运行时与 BYOK</h3>
+            <p className="eyebrow">设置</p>
+            <h3>模型与服务设置</h3>
+            <p className="workspace-subtitle">确认服务地址、访问密钥和默认写作模型后，当前项目才能继续分析、编写和校核。</p>
           </div>
           <button className="ghost-button" onClick={onClose} type="button">
             关闭
@@ -50,43 +66,44 @@ export function SettingsDrawer({
         </div>
 
         <form className="stack" onSubmit={onSubmit}>
+          <section className="surface-card compact">
+            <div className="stack compact">
+              <strong>当前设置说明</strong>
+              <p>这里主要检查模型服务是否可用，并确认默认写作模型是否符合当前投标任务需要。</p>
+            </div>
+          </section>
+
           <div className="two-column">
             <label>
-              Provider
-              <input
-                value={runtimeForm.provider}
-                onChange={(event) => onFieldChange("provider", event.target.value)}
-              />
+              服务提供方
+              <input autoComplete="off" value={runtimeForm.provider} onChange={(event) => onFieldChange("provider", event.target.value)} />
             </label>
             <label>
-              API Base URL
-              <input
-                value={runtimeForm.apiBaseUrl}
-                onChange={(event) => onFieldChange("apiBaseUrl", event.target.value)}
-              />
+              服务地址
+              <input autoComplete="url" value={runtimeForm.apiBaseUrl} onChange={(event) => onFieldChange("apiBaseUrl", event.target.value)} />
             </label>
           </div>
 
           <div className="two-column">
             <label>
-              API Key
+              访问密钥
               <input
                 autoComplete="new-password"
                 type="password"
                 value={runtimeForm.apiKey}
-                placeholder={runtimeSettings?.api_key_configured ? "后端已配置，可覆盖" : "输入调试用 BYOK"}
+                placeholder={runtimeSettings?.api_key_configured ? "后端已配置，可按需覆盖" : "请输入可用密钥"}
                 onChange={(event) => onFieldChange("apiKey", event.target.value)}
               />
             </label>
             <label>
-              连通性校验角色
+              检查哪一项服务
               <select
                 value={runtimeForm.selectedRole}
                 onChange={(event) => onSelectedRoleChange(event.target.value as RuntimeForm["selectedRole"])}
               >
                 {Object.keys(runtimeForm.defaultModels).map((role) => (
                   <option key={role} value={role}>
-                    {role}
+                    {getRoleLabel(role as keyof RuntimeSettings["default_models"])}
                   </option>
                 ))}
               </select>
@@ -96,8 +113,9 @@ export function SettingsDrawer({
           <div className="role-grid">
             {Object.entries(runtimeForm.defaultModels).map(([role, model]) => (
               <label key={role}>
-                {role}
+                {getRoleLabel(role as keyof RuntimeSettings["default_models"])}
                 <input
+                  autoComplete="off"
                   value={model}
                   onChange={(event) =>
                     onModelChange(role as keyof RuntimeSettings["default_models"], event.target.value)
@@ -108,12 +126,15 @@ export function SettingsDrawer({
           </div>
 
           <button className="primary-button" disabled={disabled} type="submit">
-            运行模型连通性检查
+            检查服务是否可用
           </button>
 
           {connectivityResult ? (
             <div className={`message-box ${connectivityResult.ok ? "message-success" : "message-warning"}`}>
-              <strong>{connectivityResult.ok ? "连通成功" : "连通失败"}</strong>
+              <div className="panel-header">
+                <strong>{connectivityResult.ok ? "服务可用" : "服务检查未通过"}</strong>
+                <StatusBadge label={connectivityResult.ok ? "可继续使用" : "请先处理"} tone={connectivityResult.ok ? "success" : "warning"} />
+              </div>
               <p>
                 {connectivityResult.model} · {connectivityResult.message}
               </p>

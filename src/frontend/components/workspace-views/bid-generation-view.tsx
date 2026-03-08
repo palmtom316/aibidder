@@ -1,6 +1,7 @@
 import type { GeneratedSection, GenerationJob } from "../../lib/api";
 import type { FormSubmitHandler, StateSetter, VoidAction } from "./shared";
-import { parseEvidenceSummary } from "./utils";
+import { ModuleIntro } from "./module-intro";
+import { formatJobStatus, parseEvidenceSummary } from "./utils";
 
 type BidGenerationViewProps = {
   generationJobs: GenerationJob[];
@@ -37,17 +38,37 @@ export function BidGenerationView({
 }: BidGenerationViewProps) {
   return (
     <section className="workspace-stack">
+      <ModuleIntro
+        title="内容编写"
+        description="先生成章节框架，再逐章补齐投标内容、证据和表述细节。"
+        metrics={[
+          { label: "编写任务", value: generationJobs.length },
+          { label: "已生成章节", value: generatedSections.length },
+          { label: "当前状态", value: selectedGenerationJob ? formatJobStatus(selectedGenerationJob.status) : "未开始" },
+        ]}
+        actions={
+          <button
+            className="ghost-button"
+            disabled={!token || !selectedGenerationJob || Boolean(busyLabel) || selectedGenerationJob.status === "approved"}
+            onClick={() => void handleApproveGenerationOutline()}
+            type="button"
+          >
+            {selectedGenerationJob?.status === "approved" ? "框架已确认" : "确认章节框架"}
+          </button>
+        }
+      />
+
       <div className="workspace-grid workspace-grid-2">
         <form className="surface-card stack" onSubmit={handleCreateGenerationJob}>
           <div className="panel-header compact">
             <div>
-              <p className="eyebrow">标书生成</p>
-              <h3>Generation</h3>
+              <p className="eyebrow">编写任务</p>
+              <h3>创建章节编写任务</h3>
             </div>
-            <span className="badge">{generationJobs.length}</span>
+            <span className="badge">{generationJobs.length} 条</span>
           </div>
           <label>
-            任务名
+            任务名称
             <input value={generationJobName} onChange={(event) => setGenerationJobName(event.target.value)} />
           </label>
           <label>
@@ -60,7 +81,7 @@ export function BidGenerationView({
             />
           </label>
           <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
-            创建生成任务
+            开始生成章节草稿
           </button>
           <label>
             查看任务
@@ -80,7 +101,7 @@ export function BidGenerationView({
             {generationJobs.map((row) => (
               <div className="mini-item" key={row.id}>
                 <strong>{row.job_name}</strong>
-                <span>{row.status}</span>
+                <span>{formatJobStatus(row.status)}</span>
               </div>
             ))}
           </div>
@@ -89,18 +110,18 @@ export function BidGenerationView({
         <section className="surface-card">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">生成结果</p>
-              <h3>{selectedGenerationJob ? selectedGenerationJob.job_name : "等待选择任务"}</h3>
+              <p className="eyebrow">章节草稿</p>
+              <h3>{selectedGenerationJob ? selectedGenerationJob.job_name : "等待选择编写任务"}</h3>
             </div>
             <span className="badge">{generatedSections.length} 章</span>
           </div>
           <div className="stack">
             <div className="info-block">
-              <strong>框架与章节</strong>
+              <strong>当前进度</strong>
               <p>
                 {selectedGenerationJob
-                  ? `状态：${selectedGenerationJob.status}，目标章节：${selectedGenerationJob.target_sections}`
-                  : "先创建或选择一个生成任务。"}
+                  ? `状态：${formatJobStatus(selectedGenerationJob.status)}，目标章节：${selectedGenerationJob.target_sections}`
+                  : "先创建或选择一个编写任务。"}
               </p>
               <div className="inline-actions">
                 <button
@@ -109,7 +130,7 @@ export function BidGenerationView({
                   onClick={() => void handleApproveGenerationOutline()}
                   type="button"
                 >
-                  {selectedGenerationJob?.status === "approved" ? "已审批" : "审批框架"}
+                  {selectedGenerationJob?.status === "approved" ? "框架已确认" : "确认章节框架"}
                 </button>
               </div>
             </div>
@@ -122,7 +143,7 @@ export function BidGenerationView({
                       <header>
                         <strong>{section.title}</strong>
                         <span>
-                          {section.status} · {evidence.length} 条证据
+                          {formatJobStatus(section.status)} · {evidence.length} 条证据
                         </span>
                       </header>
                       <p>{section.draft_text}</p>
@@ -143,7 +164,7 @@ export function BidGenerationView({
             ) : (
               <div className="info-block">
                 <strong>暂无章节草稿</strong>
-                <p>创建生成任务后，这里会显示已生成的章节草稿和证据来源。</p>
+                <p>创建编写任务后，这里会显示已生成的章节草稿和证据来源。</p>
               </div>
             )}
           </div>

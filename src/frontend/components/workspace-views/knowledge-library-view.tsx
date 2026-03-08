@@ -1,5 +1,4 @@
-import { HeroPanel } from "../hero-panel";
-import { ModuleStrip } from "../module-strip";
+import { ModuleIntro } from "./module-intro";
 import type {
   DocumentRecord,
   EquipmentAsset,
@@ -14,16 +13,14 @@ import type {
   Project,
   ProjectCredential,
   Qualification,
-  WorkbenchOverview,
 } from "../../lib/api";
 import type { FormSubmitHandler, NumberAction, StateSetter, VoidAction } from "./shared";
-import { formatDate } from "./utils";
+import { formatCredentialType, formatDate, formatDocumentType, formatJobStatus, formatLibraryCategory, formatProjectType, formatRiskLevel } from "./utils";
 
 type KnowledgeLibraryViewProps = {
   projects: Project[];
   documents: DocumentRecord[];
   historicalBids: HistoricalBid[];
-  workbenchOverview: WorkbenchOverview | null;
   selectedProject: Project | null;
   selectedProjectId: number | null;
   selectedDocument: DocumentRecord | null;
@@ -145,7 +142,6 @@ export function KnowledgeLibraryView({
   projects,
   documents,
   historicalBids,
-  workbenchOverview,
   selectedProject,
   selectedProjectId,
   selectedDocument,
@@ -265,18 +261,35 @@ export function KnowledgeLibraryView({
   return (
     <>
       <section className="workspace-stack">
-        <HeroPanel
-          projectCount={projects.length}
-          documentCount={documents.length}
-          historicalBidCount={historicalBids.length}
+        <ModuleIntro
+          title="资料准备"
+          description="先把招标文件、资质、人员、设备、业绩和历史样本补齐，后续分析和编写会更顺。"
+          metrics={[
+            { label: "项目数", value: projects.length },
+            { label: "已收资料", value: documents.length },
+            { label: "历史样本", value: historicalBids.length },
+          ]}
+          actions={
+            <>
+              <button className="ghost-button" onClick={() => onActivateModule("tender-analysis")} type="button">
+                进入招标分析
+              </button>
+              <button className="ghost-button" onClick={() => onActivateModule("bid-generation")} type="button">
+                进入内容编写
+              </button>
+              <button className="primary-button" onClick={() => void onOpenCopilot()} type="button">
+                打开助手
+              </button>
+            </>
+          }
         />
-        <ModuleStrip modules={workbenchOverview?.modules ?? []} />
+
         <div className="workspace-grid workspace-grid-2">
           <section className="surface-card">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Overview</p>
-                <h3>当前项目上下文</h3>
+                <p className="eyebrow">当前概况</p>
+                <h3>本项目资料准备情况</h3>
               </div>
               <span className="badge">{selectedProject ? selectedProject.name : "未选择项目"}</span>
             </div>
@@ -290,56 +303,44 @@ export function KnowledgeLibraryView({
                 <strong>{documents.length}</strong>
               </div>
               <div className="summary-item">
-                <span>历史标书</span>
+                <span>历史样本</span>
                 <strong>{historicalBids.length}</strong>
               </div>
-            </div>
-            <div className="inline-actions">
-              <button className="ghost-button" onClick={() => onActivateModule("tender-analysis")} type="button">
-                标书分析
-              </button>
-              <button className="ghost-button" onClick={() => onActivateModule("bid-generation")} type="button">
-                标书生成
-              </button>
-              <button className="ghost-button" onClick={() => void onOpenCopilot()} type="button">
-                打开 Copilot
-              </button>
             </div>
           </section>
 
           <section className="surface-card">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Recent</p>
-                <h3>最近活动</h3>
+                <p className="eyebrow">当前提醒</p>
+                <h3>最近进展与待办</h3>
               </div>
-              <span className="badge">{busyLabel || "空闲"}</span>
+              <span className="badge">{busyLabel || "可继续处理"}</span>
             </div>
             <div className="stack">
               <div className="info-block">
-                <strong>最近消息</strong>
+                <strong>最新提示</strong>
                 <p>{message}</p>
               </div>
               <div className="info-block">
                 <strong>当前文档</strong>
-                <p>{selectedDocument ? `${selectedDocument.filename} · ${selectedDocument.document_type}` : "未选择文档"}</p>
+                <p>{selectedDocument ? `${selectedDocument.filename} · ${formatDocumentType(selectedDocument.document_type)}` : "未选择文档"}</p>
               </div>
               <div className="info-block">
-                <strong>当前历史标书</strong>
-                <p>{selectedHistoricalBid ? `#${selectedHistoricalBid.id} · ${selectedHistoricalBid.project_type}` : "未选择历史标书"}</p>
+                <strong>当前历史样本</strong>
+                <p>{selectedHistoricalBid ? `#${selectedHistoricalBid.id} · ${formatProjectType(selectedHistoricalBid.project_type)}` : "未选择历史样本"}</p>
               </div>
             </div>
           </section>
         </div>
       </section>
-
       <section className="workspace-stack">
         <div className="workspace-grid workspace-grid-3">
           <section className="surface-card">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Projects</p>
-                <h3>项目与文档</h3>
+                <p className="eyebrow">项目与文档</p>
+                <h3>项目与资料</h3>
               </div>
               <span className="badge">{selectedProject ? selectedProject.name : "未选择"}</span>
             </div>
@@ -350,7 +351,7 @@ export function KnowledgeLibraryView({
                 onChange={(event) => setProjectName(event.target.value)}
               />
               <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
-                创建
+                新建项目
               </button>
             </form>
             <form className="stack" onSubmit={handleUploadDocument}>
@@ -358,9 +359,9 @@ export function KnowledgeLibraryView({
                 <label>
                   文档类型
                   <select value={uploadType} onChange={(event) => setUploadType(event.target.value)}>
-                    <option value="tender">tender</option>
-                    <option value="norm">norm</option>
-                    <option value="proposal">proposal</option>
+                    <option value="tender">招标文件</option>
+                    <option value="norm">规范文件</option>
+                    <option value="proposal">投标文件</option>
                   </select>
                 </label>
                 <label>
@@ -373,7 +374,7 @@ export function KnowledgeLibraryView({
                 disabled={!token || !selectedProjectId || Boolean(busyLabel)}
                 type="submit"
               >
-                上传文档
+                上传资料
               </button>
             </form>
             <div className="list">
@@ -387,7 +388,7 @@ export function KnowledgeLibraryView({
                   <div>
                     <strong>{document.filename}</strong>
                     <p>
-                      #{document.id} · {document.document_type}
+                      #{document.id} · {formatDocumentType(document.document_type)}
                     </p>
                   </div>
                   <span>{formatDate(document.created_at)}</span>
@@ -399,8 +400,8 @@ export function KnowledgeLibraryView({
           <section className="surface-card workspace-span-2">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Knowledge Library</p>
-                <h3>投标资料库</h3>
+                <p className="eyebrow">资料台账</p>
+                <h3>企业与项目资料</h3>
               </div>
               <span className="badge">{knowledgeBaseEntries.length} 条资料</span>
             </div>
@@ -492,12 +493,12 @@ export function KnowledgeLibraryView({
                   <div>
                     <strong>{entry.title}</strong>
                     <p>
-                      {entry.category} · {entry.owner_name || "未指定部门"}
+                      {formatLibraryCategory(entry.category)} · {entry.owner_name || "未指定部门"}
                     </p>
                     <p>{entry.detected_summary || "待执行资料检测。"}</p>
                   </div>
                   <div className="list-actions">
-                    <span>{entry.detection_status}</span>
+                    <span>{formatJobStatus(entry.detection_status)}</span>
                     <button className="ghost-button" onClick={() => void handleRunLibraryCheck(entry.id)} type="button">
                       运行检测
                     </button>
@@ -657,7 +658,7 @@ export function KnowledgeLibraryView({
                 <div className="mini-item" key={row.id}>
                   <div>
                     <strong>{row.project_name}</strong>
-                    <span>{row.credential_type} · {row.owner_name || "未指定部门"}</span>
+                    <span>{formatCredentialType(row.credential_type)} · {row.owner_name || "未指定部门"}</span>
                   </div>
                   <button className="ghost-button" onClick={() => void handleDeleteProjectCredential(row.id)} type="button">删除</button>
                 </div>
@@ -671,8 +672,8 @@ export function KnowledgeLibraryView({
         <section className="surface-card">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Evidence</p>
-              <h3>真值证据检索</h3>
+              <p className="eyebrow">证据检索</p>
+              <h3>证据与条款检索</h3>
             </div>
             <span className="badge">{evidenceResults.length} 命中</span>
           </div>
@@ -690,8 +691,8 @@ export function KnowledgeLibraryView({
                 文档范围
                 <select value={evidenceDocumentType} onChange={(event) => setEvidenceDocumentType(event.target.value)}>
                   <option value="">全部真值文档</option>
-                  <option value="tender">tender</option>
-                  <option value="norm">norm</option>
+                  <option value="tender">招标文件</option>
+                  <option value="norm">规范文件</option>
                 </select>
               </label>
               <div className="align-end">
@@ -700,14 +701,14 @@ export function KnowledgeLibraryView({
                   disabled={!token || !selectedProjectId || !evidenceQuery.trim() || Boolean(busyLabel)}
                   type="submit"
                 >
-                  检索 evidence
+                  开始检索
                 </button>
               </div>
             </div>
           </form>
           <div className="workspace-grid workspace-grid-2">
             <div className="scroll-box">
-              <strong>Search Results</strong>
+              <strong>检索结果</strong>
               {evidenceResults.map((row) => (
                 <article className="result-card" key={row.id}>
                   <header>
@@ -721,13 +722,13 @@ export function KnowledgeLibraryView({
               ))}
             </div>
             <div className="scroll-box">
-              <strong>Selected Document Evidence Units</strong>
+              <strong>当前文档证据片段</strong>
               {documentEvidenceUnits.map((row) => (
                 <article className="result-card" key={row.id}>
                   <header>
                     <strong>{row.section_title}</strong>
                     <span>
-                      {row.unit_type} · {row.anchor}
+                      证据片段 · {row.anchor}
                     </span>
                   </header>
                   <p>{row.content}</p>
@@ -743,14 +744,14 @@ export function KnowledgeLibraryView({
           <section className="surface-card">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Historical</p>
-                <h3>历史标书导入</h3>
+                <p className="eyebrow">历史样本</p>
+                <h3>导入历史投标成果</h3>
               </div>
               <span className="badge">{historicalBids.length} 份</span>
             </div>
             <form className="stack" onSubmit={handleImportHistoricalBid}>
               <label>
-                选择已上传文档
+                选择已上传资料
                 <select
                   value={importDocumentId ?? ""}
                   onChange={(event) => setImportDocumentId(Number(event.target.value) || null)}
@@ -765,21 +766,21 @@ export function KnowledgeLibraryView({
               </label>
               <div className="two-column">
                 <label>
-                  source_type
+                  来源类型
                   <input value={historicalSourceType} onChange={(event) => setHistoricalSourceType(event.target.value)} />
                 </label>
                 <label>
-                  project_type
+                  工程类型
                   <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
                 </label>
               </div>
               <div className="two-column">
                 <label>
-                  region
+                  区域
                   <input value={historicalRegion} onChange={(event) => setHistoricalRegion(event.target.value)} />
                 </label>
                 <label>
-                  year
+                  年份
                   <input value={historicalYear} onChange={(event) => setHistoricalYear(event.target.value)} />
                 </label>
               </div>
@@ -805,7 +806,7 @@ export function KnowledgeLibraryView({
                 <option value="">请选择历史标书</option>
                 {historicalBids.map((item) => (
                   <option key={item.id} value={item.id}>
-                    #{item.id} · doc {item.document_id} · {item.project_type}
+                    #{item.id} · 文档 #{item.document_id} · {formatProjectType(item.project_type)}
                   </option>
                 ))}
               </select>
@@ -815,10 +816,10 @@ export function KnowledgeLibraryView({
                 刷新详情
               </button>
               <button className="ghost-button" onClick={() => void handleRebuildSections()} type="button">
-                重建 sections
+                重建章节切分
               </button>
               <button className="ghost-button" onClick={() => void handleRebuildReuseUnits()} type="button">
-                重建 reuse units
+                重建复用片段
               </button>
             </div>
           </section>
@@ -826,60 +827,60 @@ export function KnowledgeLibraryView({
           <section className="surface-card workspace-span-2">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Reuse</p>
-                <h3>历史复用与污染校验</h3>
+                <p className="eyebrow">历史复用</p>
+                <h3>历史复用与串项校验</h3>
               </div>
               <span className="badge">{selectedHistoricalBid ? `#${selectedHistoricalBid.id}` : "未选择"}</span>
             </div>
             <form className="stack" onSubmit={handleSearchReuse}>
               <div className="three-column">
                 <label>
-                  project_type
+                  工程类型
                   <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
                 </label>
                 <label>
-                  section_type
+                  章节类型
                   <input value={reuseSectionType} onChange={(event) => setReuseSectionType(event.target.value)} />
                 </label>
                 <div className="align-end">
                   <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
-                    检索 reuse pack
+                    检索复用建议
                   </button>
                 </div>
               </div>
             </form>
             <div className="workspace-grid workspace-grid-3">
               <div className="scroll-box">
-                <strong>safe_reuse</strong>
-                {reusePack?.safe_reuse.map((item) => (
+                <strong>可直接复用</strong>
+                {reusePack?.safe_reuse?.map((item) => (
                   <article className="result-card" key={item.id}>
                     <header>
                       <strong>#{item.id}</strong>
-                      <span>{item.risk_level}</span>
+                      <span>{formatRiskLevel(item.risk_level)}</span>
                     </header>
                     <p>{item.sanitized_text}</p>
                   </article>
                 ))}
               </div>
               <div className="scroll-box">
-                <strong>slot_reuse</strong>
-                {reusePack?.slot_reuse.map((item) => (
+                <strong>需替换信息</strong>
+                {reusePack?.slot_reuse?.map((item) => (
                   <article className="result-card" key={item.id}>
                     <header>
                       <strong>#{item.id}</strong>
-                      <span>{item.risk_level}</span>
+                      <span>{formatRiskLevel(item.risk_level)}</span>
                     </header>
                     <p>{item.sanitized_text}</p>
                   </article>
                 ))}
               </div>
               <div className="scroll-box">
-                <strong>style_only</strong>
-                {reusePack?.style_only.map((item) => (
+                <strong>仅保留写法</strong>
+                {reusePack?.style_only?.map((item) => (
                   <article className="result-card" key={item.id}>
                     <header>
                       <strong>#{item.id}</strong>
-                      <span>{item.risk_level}</span>
+                      <span>{formatRiskLevel(item.risk_level)}</span>
                     </header>
                     <p>{item.sanitized_text}</p>
                   </article>
@@ -890,11 +891,11 @@ export function KnowledgeLibraryView({
             <form className="stack" onSubmit={handleVerifyLeakage}>
               <div className="two-column">
                 <label>
-                  section_id
+                  章节编号
                   <input value={leakageSectionId} onChange={(event) => setLeakageSectionId(event.target.value)} />
                 </label>
                 <label>
-                  reuse_unit_ids
+                  复用片段编号
                   <input
                     value={leakageReuseUnitIds}
                     onChange={(event) => setLeakageReuseUnitIds(event.target.value)}
@@ -903,7 +904,7 @@ export function KnowledgeLibraryView({
                 </label>
               </div>
               <label>
-                forbidden_legacy_terms
+                禁止沿用词
                 <input
                   value={leakageForbiddenTerms}
                   onChange={(event) => setLeakageForbiddenTerms(event.target.value)}
@@ -911,7 +912,7 @@ export function KnowledgeLibraryView({
                 />
               </label>
               <label>
-                draft_text
+                待检查草稿
                 <textarea rows={5} value={leakageDraftText} onChange={(event) => setLeakageDraftText(event.target.value)} />
               </label>
               <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
@@ -927,7 +928,7 @@ export function KnowledgeLibraryView({
 
             <div className="workspace-grid workspace-grid-2">
               <div className="scroll-box">
-                <strong>Sections</strong>
+                <strong>历史章节</strong>
                 {historicalSections.map((section) => (
                   <article className="result-card" key={section.id}>
                     <header>
@@ -939,13 +940,13 @@ export function KnowledgeLibraryView({
                 ))}
               </div>
               <div className="scroll-box">
-                <strong>Reuse Units</strong>
+                <strong>复用片段</strong>
                 {historicalReuseUnits.map((unit) => (
                   <article className="result-card" key={unit.id}>
                     <header>
                       <strong>#{unit.id}</strong>
                       <span>
-                        {unit.reuse_mode} · {unit.risk_level}
+                        复用方式 · ${formatRiskLevel(unit.risk_level)}
                       </span>
                     </header>
                     <p>{unit.sanitized_text}</p>
