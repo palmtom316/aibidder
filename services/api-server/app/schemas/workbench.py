@@ -179,6 +179,19 @@ class LibraryRecordDetailResponse(LibraryRecordResponse):
     chunks: list[LibraryChunkResponse]
 
 
+class LibraryReviewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    library_record_id: int
+    library_record_version_id: int | None
+    review_status: str
+    reviewer_user_id: int | None
+    review_notes: str
+    diff_json: str
+    created_at: datetime
+
+
 class LibrarySearchResult(BaseModel):
     record: LibraryRecordResponse
     chunks: list[LibraryChunkResponse]

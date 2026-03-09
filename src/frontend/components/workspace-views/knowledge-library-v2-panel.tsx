@@ -12,6 +12,7 @@ import {
   getLibraryRecordDetail,
   listLibraryProjectCategories,
   listLibraryRecords,
+  listLibraryReviews,
   searchLibraryRecords,
   updateLibraryRecord,
   uploadLibraryRecordAttachment,
@@ -20,6 +21,7 @@ import {
   type LibraryProjectCategoryOption,
   type LibraryRecord,
   type LibraryRecordDetail,
+  type LibraryReview,
   type LibrarySearchResult,
 } from "../../lib/api";
 import { formatDate, formatJobStatus, formatStoragePath } from "./utils";
@@ -72,6 +74,8 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
   const [selectedRecordDetail, setSelectedRecordDetail] = useState<LibraryRecordDetail | null>(null);
   const [searchResults, setSearchResults] = useState<LibrarySearchResult[]>([]);
+  const [pendingReviews, setPendingReviews] = useState<LibraryReview[]>([]);
+  const [recordReviews, setRecordReviews] = useState<LibraryReview[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [busyLabel, setBusyLabel] = useState("");
   const [message, setMessage] = useState("新版资料库支持统一入库、附件挂载和检索。");
@@ -112,13 +116,17 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
   async function loadRecords(currentToken: string, tab: RecordTabKey) {
     const payload = await listLibraryRecords(currentToken, { record_type: tab });
     setRecords(payload);
+    const reviews = await listLibraryReviews(currentToken, { review_status: "awaiting_review" });
+    setPendingReviews(reviews);
     if (payload.length > 0) {
       setSelectedRecordId(payload[0].id);
       const detail = await getLibraryRecordDetail(currentToken, payload[0].id);
       setSelectedRecordDetail(detail);
+      setRecordReviews(await listLibraryReviews(currentToken, { record_id: payload[0].id }));
     } else {
       setSelectedRecordId(null);
       setSelectedRecordDetail(null);
+      setRecordReviews([]);
     }
   }
 
@@ -156,6 +164,7 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
     setSelectedRecordId(recordId);
     const detail = await getLibraryRecordDetail(token, recordId);
     setSelectedRecordDetail(detail);
+    setRecordReviews(await listLibraryReviews(token, { record_id: recordId }));
   }
 
   async function handleCreateRecord() {
@@ -439,6 +448,46 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
           ))}
         </div>
 
+        <div className="summary-list">
+          <div className="summary-item">
+            <span>当前分类记录</span>
+            <strong>{records.length}</strong>
+          </div>
+          <div className="summary-item">
+            <span>待复核任务</span>
+            <strong>{pendingReviews.length}</strong>
+          </div>
+          <div className="summary-item">
+            <span>检索结果</span>
+            <strong>{searchResults.length}</strong>
+          </div>
+        </div>
+
+        {pendingReviews.length > 0 ? (
+          <section className="surface-card">
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">待复核</p>
+                <h3>优先处理这些资料</h3>
+              </div>
+              <span className="badge">{pendingReviews.length}</span>
+            </div>
+            <div className="mini-list">
+              {pendingReviews.slice(0, 6).map((review) => (
+                <div className="mini-item" key={review.id}>
+                  <div>
+                    <strong>记录 #{review.library_record_id}</strong>
+                    <span>{review.review_notes || "待人工复核后发布"}</span>
+                  </div>
+                  <button className="ghost-button" onClick={() => void handleSelectRecord(review.library_record_id)} type="button">
+                    打开
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <div className="workspace-grid workspace-grid-2">
           <div className="stack">
             <div className="panel-header compact">
@@ -610,6 +659,17 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
                         <span>{attachment.attachment_role} · {attachment.ocr_status}</span>
                       </div>
                       <span>{formatStoragePath(attachment.storage_path)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mini-list">
+                  {recordReviews.map((review) => (
+                    <div className="mini-item" key={review.id}>
+                      <div>
+                        <strong>{review.review_status}</strong>
+                        <span>{review.review_notes || "无复核备注"}</span>
+                      </div>
+                      <span>{formatDate(review.created_at)}</span>
                     </div>
                   ))}
                 </div>

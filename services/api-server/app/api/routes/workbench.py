@@ -35,6 +35,7 @@ from app.db.models import (
     LibraryChunk,
     LibraryRecord,
     LibraryRecordVersion,
+    LibraryReview,
     LayoutJob,
     PersonnelAsset,
     PersonnelPerformanceProfile,
@@ -71,6 +72,7 @@ from app.schemas.workbench import (
     LibraryRecordDetailResponse,
     LibraryRecordResponse,
     LibraryRecordReviewUpdate,
+    LibraryReviewResponse,
     LibrarySearchResult,
     LayoutJobCreate,
     LayoutJobResponse,
@@ -400,6 +402,29 @@ def _serialize_library_record_detail(db: Session, record: LibraryRecord) -> Libr
     return LibraryRecordDetailResponse(**payload)
 
 
+def _append_library_review(
+    db: Session,
+    *,
+    record: LibraryRecord,
+    version: LibraryRecordVersion | None,
+    review_status: str,
+    reviewer_user_id: int | None,
+    review_notes: str,
+    diff_json: str,
+) -> LibraryReview:
+    review = LibraryReview(
+        library_record_id=record.id,
+        library_record_version_id=version.id if version is not None else None,
+        review_status=review_status,
+        reviewer_user_id=reviewer_user_id,
+        review_notes=review_notes,
+        diff_json=diff_json,
+    )
+    db.add(review)
+    db.flush()
+    return review
+
+
 def _build_library_record(
     *,
     db: Session,
@@ -445,6 +470,15 @@ def _build_library_record(
     version = latest_record_version(db, record.id)
     if version is not None:
         version.summary_text = record.summary_text
+    _append_library_review(
+        db,
+        record=record,
+        version=version,
+        review_status="awaiting_review" if source_document_id is not None else "published",
+        reviewer_user_id=current_user.id if source_document_id is None else None,
+        review_notes="自动建档",
+        diff_json=json.dumps({"created": True}, ensure_ascii=False),
+    )
     write_audit_log(
         db,
         action=f"workbench.library.{record_type}.create",
@@ -611,6 +645,30 @@ def search_library_records(
         for record_id, items in grouped.items()
         if records.get(record_id) is not None
     ]
+
+
+@router.get("/library/reviews", response_model=list[LibraryReviewResponse])
+def list_library_reviews(
+    review_status: str | None = Query(None, min_length=1, max_length=64),
+    record_id: int | None = Query(None, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LibraryReview]:
+    stmt = (
+        select(LibraryReview)
+        .join(LibraryRecord, LibraryRecord.id == LibraryReview.library_record_id)
+        .where(LibraryRecord.organization_id == current_user.organization_id)
+        .order_by(LibraryReview.created_at.desc(), LibraryReview.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if review_status is not None:
+        stmt = stmt.where(LibraryReview.review_status == review_status)
+    if record_id is not None:
+        stmt = stmt.where(LibraryReview.library_record_id == record_id)
+    return list(db.scalars(stmt))
 
 
 @router.post("/library/document-records/upload", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
@@ -828,18 +886,41 @@ def update_library_record_review(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library record not found")
 
     changes = payload.model_dump(exclude_unset=True)
+    before = {
+        "title": record.title,
+        "project_category": record.project_category,
+        "owner_name": record.owner_name,
+        "summary_text": record.summary_text,
+        "tags_json": record.tags_json,
+        "profile_json": record.profile_json,
+        "status": record.status,
+        "confidence_weight": record.confidence_weight,
+    }
     if "project_category" in changes:
         ensure_project_category(changes["project_category"])
     for field, value in changes.items():
-        if field == "profile_json" and value is not None:
-            setattr(record, field, value)
-            sync_profile_table(db, record)
-            continue
         setattr(record, field, value)
+    if "profile_json" in changes and changes["profile_json"] is not None:
+        sync_profile_table(db, record)
     record.current_version_no += 1
-    create_library_record_version(db, record=record, review_notes=changes.get("review_notes", ""))
+    version = create_library_record_version(db, record=record, review_notes=changes.get("review_notes", ""))
     if record.record_type in {"historical_bid", "excellent_bid", "norm_spec"}:
         rebuild_chunks_for_record(db, record)
+    diff_payload = {
+        key: {"before": before.get(key), "after": getattr(record, key)}
+        for key in before
+        if key in changes and before.get(key) != getattr(record, key)
+    }
+    review_status = changes.get("status", record.status)
+    _append_library_review(
+        db,
+        record=record,
+        version=version,
+        review_status=review_status,
+        reviewer_user_id=current_user.id,
+        review_notes=changes.get("review_notes", ""),
+        diff_json=json.dumps(diff_payload, ensure_ascii=False),
+    )
     write_audit_log(
         db,
         action="workbench.library.record.review_update",

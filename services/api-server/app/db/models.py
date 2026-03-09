@@ -521,6 +521,21 @@ class LibraryChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class LibraryReview(Base):
+    __tablename__ = "library_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    library_record_id: Mapped[int] = mapped_column(ForeignKey("library_records.id"), nullable=False, index=True)
+    library_record_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("library_record_versions.id"), nullable=True, index=True
+    )
+    review_status: Mapped[str] = mapped_column(String(64), nullable=False, default="pending", index=True)
+    reviewer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    review_notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    diff_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class CompanyQualificationProfile(Base):
     __tablename__ = "company_qualification_profiles"
 

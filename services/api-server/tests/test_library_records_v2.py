@@ -207,3 +207,44 @@ def test_upload_library_document_record_creates_document_and_record_in_one_step(
     assert detail.status_code == 200, detail.text
     detail_payload = detail.json()
     assert len(detail_payload["chunks"]) >= 1
+
+
+def test_review_update_creates_library_review_history() -> None:
+    client = TestClient(app)
+    token = _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    created = client.post(
+        "/api/v1/workbench/library/company-qualifications-v2",
+        json={
+            "title": "电力施工总承包资质",
+            "project_category": "配网工程",
+            "owner_name": "资质管理部",
+            "qualification_name": "电力施工总承包",
+            "qualification_level": "一级",
+            "valid_until": "2028-12-31",
+            "certificate_no": "A-001",
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    record_id = created.json()["id"]
+
+    reviewed = client.patch(
+        f"/api/v1/workbench/library/records/{record_id}",
+        json={"status": "published", "review_notes": "字段核对完成，允许发布。"},
+        headers=headers,
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "published"
+
+    reviews = client.get(
+        "/api/v1/workbench/library/reviews",
+        params={"record_id": record_id},
+        headers=headers,
+    )
+    assert reviews.status_code == 200, reviews.text
+    payload = reviews.json()
+    assert len(payload) >= 2
+    assert payload[0]["review_status"] == "published"
+    assert "允许发布" in payload[0]["review_notes"]

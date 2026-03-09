@@ -283,6 +283,17 @@ export type LibrarySearchResult = {
   chunks: LibraryChunk[];
 };
 
+export type LibraryReview = {
+  id: number;
+  library_record_id: number;
+  library_record_version_id: number | null;
+  review_status: string;
+  reviewer_user_id: number | null;
+  review_notes: string;
+  diff_json: string;
+  created_at: string;
+};
+
 export type Qualification = {
   id: number;
   organization_id: number;
@@ -978,6 +989,21 @@ export function updateLibraryRecord(
     { method: "PATCH", body: JSON.stringify(payload) },
     token,
   );
+}
+
+export function listLibraryReviews(
+  token: string,
+  filters: { review_status?: string; record_id?: number } = {},
+) {
+  const params = new URLSearchParams();
+  if (filters.review_status) {
+    params.set("review_status", filters.review_status);
+  }
+  if (typeof filters.record_id === "number") {
+    params.set("record_id", String(filters.record_id));
+  }
+  const query = params.toString();
+  return apiRequest<LibraryReview[]>(`/api/v1/workbench/library/reviews${query ? `?${query}` : ""}`, {}, token);
 }
 
 
