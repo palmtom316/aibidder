@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import {
   createCompanyAssetRecord,
@@ -10,6 +10,11 @@ import {
   createPersonnelPerformanceRecord,
   createPersonnelQualificationRecord,
   getLibraryRecordDetail,
+  type HistoricalBid,
+  type HistoricalBidSection,
+  type HistoricalLeakageResult,
+  type HistoricalReusePack,
+  type HistoricalReuseUnit,
   listLibraryProjectCategories,
   listLibraryRecords,
   listLibraryReviews,
@@ -24,12 +29,47 @@ import {
   type LibraryReview,
   type LibrarySearchResult,
 } from "../../lib/api";
-import { formatDate, formatJobStatus, formatStoragePath } from "./utils";
+import { formatDate, formatJobStatus, formatProjectType, formatRiskLevel, formatStoragePath } from "./utils";
 
 type KnowledgeLibraryV2PanelProps = {
   token: string | null;
   selectedProjectId: number | null;
   documents: DocumentRecord[];
+  historicalBids: HistoricalBid[];
+  selectedHistoricalBid: HistoricalBid | null;
+  historicalSections: HistoricalBidSection[];
+  historicalReuseUnits: HistoricalReuseUnit[];
+  reusePack: HistoricalReusePack | null;
+  importDocumentId: number | null;
+  historicalSourceType: string;
+  historicalProjectType: string;
+  historicalRegion: string;
+  historicalYear: string;
+  historicalRecommended: boolean;
+  reuseSectionType: string;
+  leakageSectionId: string;
+  leakageDraftText: string;
+  leakageForbiddenTerms: string;
+  leakageReuseUnitIds: string;
+  leakageResult: HistoricalLeakageResult | null;
+  setImportDocumentId: (value: number | null) => void;
+  setSelectedHistoricalBidId: (value: number | null) => void;
+  setHistoricalSourceType: (value: string) => void;
+  setHistoricalProjectType: (value: string) => void;
+  setHistoricalRegion: (value: string) => void;
+  setHistoricalYear: (value: string) => void;
+  setHistoricalRecommended: (value: boolean) => void;
+  setReuseSectionType: (value: string) => void;
+  setLeakageSectionId: (value: string) => void;
+  setLeakageDraftText: (value: string) => void;
+  setLeakageForbiddenTerms: (value: string) => void;
+  setLeakageReuseUnitIds: (value: string) => void;
+  handleImportHistoricalBid: (event: FormEvent<HTMLFormElement>) => void;
+  handleLoadHistoricalArtifacts: () => void;
+  handleRebuildSections: () => void;
+  handleRebuildReuseUnits: () => void;
+  handleSearchReuse: (event: FormEvent<HTMLFormElement>) => void;
+  handleVerifyLeakage: (event: FormEvent<HTMLFormElement>) => void;
 };
 
 const RECORD_TABS = [
@@ -67,7 +107,46 @@ const ATTACHMENT_ROLE_OPTIONS: Record<RecordTabKey, { value: string; label: stri
   personnel_performance: [{ value: "proof_contract", label: "人员业绩证明文件" }],
 };
 
-export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }: KnowledgeLibraryV2PanelProps) {
+export function KnowledgeLibraryV2Panel({
+  token,
+  selectedProjectId,
+  documents,
+  historicalBids,
+  selectedHistoricalBid,
+  historicalSections,
+  historicalReuseUnits,
+  reusePack,
+  importDocumentId,
+  historicalSourceType,
+  historicalProjectType,
+  historicalRegion,
+  historicalYear,
+  historicalRecommended,
+  reuseSectionType,
+  leakageSectionId,
+  leakageDraftText,
+  leakageForbiddenTerms,
+  leakageReuseUnitIds,
+  leakageResult,
+  setImportDocumentId,
+  setSelectedHistoricalBidId,
+  setHistoricalSourceType,
+  setHistoricalProjectType,
+  setHistoricalRegion,
+  setHistoricalYear,
+  setHistoricalRecommended,
+  setReuseSectionType,
+  setLeakageSectionId,
+  setLeakageDraftText,
+  setLeakageForbiddenTerms,
+  setLeakageReuseUnitIds,
+  handleImportHistoricalBid,
+  handleLoadHistoricalArtifacts,
+  handleRebuildSections,
+  handleRebuildReuseUnits,
+  handleSearchReuse,
+  handleVerifyLeakage,
+}: KnowledgeLibraryV2PanelProps) {
   const [activeTab, setActiveTab] = useState<RecordTabKey>("historical_bid");
   const [projectCategories, setProjectCategories] = useState<LibraryProjectCategoryOption[]>([]);
   const [records, setRecords] = useState<LibraryRecord[]>([]);
@@ -768,6 +847,224 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
             </div>
           </section>
         </div>
+
+        <section className="surface-card">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">历史复用</p>
+              <h3>历史样本入库与复用校验</h3>
+            </div>
+            <span className="badge">{historicalBids.length} 份</span>
+          </div>
+          <form className="stack" onSubmit={handleImportHistoricalBid}>
+            <div className="three-column three-column-equal">
+              <label>
+                选择已上传资料
+                <select
+                  value={importDocumentId ?? ""}
+                  onChange={(event) => setImportDocumentId(Number(event.target.value) || null)}
+                >
+                  <option value="">请选择文档</option>
+                  {documents.map((document) => (
+                    <option key={document.id} value={document.id}>
+                      {document.filename} · {document.document_type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                样本来源
+                <select value={historicalSourceType} onChange={(event) => setHistoricalSourceType(event.target.value)}>
+                  <option value="won_bid">历史标书</option>
+                  <option value="excellent_sample">优秀标书</option>
+                </select>
+              </label>
+              <label>
+                项目类别
+                <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
+              </label>
+            </div>
+            <div className="three-column three-column-equal">
+              <label>
+                区域
+                <input value={historicalRegion} onChange={(event) => setHistoricalRegion(event.target.value)} />
+              </label>
+              <label>
+                年份
+                <input value={historicalYear} onChange={(event) => setHistoricalYear(event.target.value)} />
+              </label>
+              <label className="inline-hint">
+                <input
+                  checked={historicalRecommended}
+                  onChange={(event) => setHistoricalRecommended(event.target.checked)}
+                  type="checkbox"
+                />
+                推荐样本
+              </label>
+            </div>
+            <div className="list-actions">
+              <button className="primary-button" disabled={!token || !importDocumentId || Boolean(busyLabel)} type="submit">
+                导入历史样本
+              </button>
+              <button className="ghost-button" disabled={!selectedHistoricalBid || Boolean(busyLabel)} onClick={() => void handleLoadHistoricalArtifacts()} type="button">
+                刷新历史样本
+              </button>
+            </div>
+            <div className="list">
+              {historicalBids.map((item) => (
+                <button
+                  className={`list-item ${selectedHistoricalBid?.id === item.id ? "list-item-active" : ""}`}
+                  key={item.id}
+                  onClick={() => setSelectedHistoricalBidId(item.id)}
+                  type="button"
+                >
+                  <div>
+                    <strong>#{item.id}</strong>
+                    <p>
+                      {formatProjectType(item.project_type)} · {item.source_type} · {item.year}
+                    </p>
+                  </div>
+                  <span>{formatJobStatus(item.ingestion_status)}</span>
+                </button>
+              ))}
+            </div>
+          </form>
+
+          <div className="workspace-grid workspace-grid-2">
+            <form className="stack" onSubmit={handleSearchReuse}>
+              <div className="panel-header compact">
+                <div>
+                  <p className="eyebrow">复用检索</p>
+                  <h3>搜索可复用片段</h3>
+                </div>
+              </div>
+              <div className="three-column three-column-equal">
+                <label>
+                  样本类型
+                  <input value={historicalProjectType} onChange={(event) => setHistoricalProjectType(event.target.value)} />
+                </label>
+                <label>
+                  章节类型
+                  <input value={reuseSectionType} onChange={(event) => setReuseSectionType(event.target.value)} />
+                </label>
+                <div className="align-end">
+                  <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
+                    检索复用片段
+                  </button>
+                </div>
+              </div>
+              <div className="list-actions">
+                <button className="ghost-button" disabled={!selectedHistoricalBid || Boolean(busyLabel)} onClick={() => void handleRebuildSections()} type="button">
+                  重建章节
+                </button>
+                <button className="ghost-button" disabled={!selectedHistoricalBid || Boolean(busyLabel)} onClick={() => void handleRebuildReuseUnits()} type="button">
+                  重建复用片段
+                </button>
+              </div>
+              <div className="workspace-grid workspace-grid-3">
+                <div className="scroll-box">
+                  <strong>可直接复用</strong>
+                  {reusePack?.safe_reuse?.map((item) => (
+                    <article className="result-card" key={item.id}>
+                      <header>
+                        <strong>#{item.id}</strong>
+                        <span>{formatRiskLevel(item.risk_level)}</span>
+                      </header>
+                      <p>{item.sanitized_text}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="scroll-box">
+                  <strong>需替换信息</strong>
+                  {reusePack?.slot_reuse?.map((item) => (
+                    <article className="result-card" key={item.id}>
+                      <header>
+                        <strong>#{item.id}</strong>
+                        <span>{formatRiskLevel(item.risk_level)}</span>
+                      </header>
+                      <p>{item.sanitized_text}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="scroll-box">
+                  <strong>仅保留写法</strong>
+                  {reusePack?.style_only?.map((item) => (
+                    <article className="result-card" key={item.id}>
+                      <header>
+                        <strong>#{item.id}</strong>
+                        <span>{formatRiskLevel(item.risk_level)}</span>
+                      </header>
+                      <p>{item.sanitized_text}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </form>
+
+            <form className="stack" onSubmit={handleVerifyLeakage}>
+              <div className="panel-header compact">
+                <div>
+                  <p className="eyebrow">历史污染校验</p>
+                  <h3>检查草稿是否带出旧项目信息</h3>
+                </div>
+              </div>
+              <div className="two-column">
+                <label>
+                  章节编号
+                  <input value={leakageSectionId} onChange={(event) => setLeakageSectionId(event.target.value)} />
+                </label>
+                <label>
+                  复用片段编号
+                  <input value={leakageReuseUnitIds} onChange={(event) => setLeakageReuseUnitIds(event.target.value)} placeholder="1,2,3" />
+                </label>
+              </div>
+              <label>
+                禁止沿用词
+                <input value={leakageForbiddenTerms} onChange={(event) => setLeakageForbiddenTerms(event.target.value)} placeholder="旧项目名,旧业主名" />
+              </label>
+              <label>
+                待检查草稿
+                <textarea rows={5} value={leakageDraftText} onChange={(event) => setLeakageDraftText(event.target.value)} />
+              </label>
+              <button className="primary-button" disabled={!token || !selectedProjectId || Boolean(busyLabel)} type="submit">
+                校验历史污染
+              </button>
+              {leakageResult ? (
+                <div className={`message-box ${leakageResult.ok ? "message-success" : "message-warning"}`}>
+                  <strong>{leakageResult.ok ? "未命中旧项目痕迹" : "命中历史污染"}</strong>
+                  <p>{leakageResult.matched_terms.join("、") || "无"}</p>
+                </div>
+              ) : null}
+            </form>
+          </div>
+
+          <div className="workspace-grid workspace-grid-2">
+            <div className="scroll-box">
+              <strong>历史章节</strong>
+              {historicalSections.map((section) => (
+                <article className="result-card" key={section.id}>
+                  <header>
+                    <strong>{section.title}</strong>
+                    <span>{section.section_type}</span>
+                  </header>
+                  <p>{section.raw_text.slice(0, 180)}</p>
+                </article>
+              ))}
+            </div>
+            <div className="scroll-box">
+              <strong>复用片段</strong>
+              {historicalReuseUnits.map((unit) => (
+                <article className="result-card" key={unit.id}>
+                  <header>
+                    <strong>#{unit.id}</strong>
+                    <span>复用方式 · {formatRiskLevel(unit.risk_level)}</span>
+                  </header>
+                  <p>{unit.sanitized_text}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
       </section>
     </section>
   );
