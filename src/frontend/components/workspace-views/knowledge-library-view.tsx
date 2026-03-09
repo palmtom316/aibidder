@@ -1,4 +1,5 @@
 import { ModuleIntro } from "./module-intro";
+import { KnowledgeLibraryV2Panel } from "./knowledge-library-v2-panel";
 import type {
   DocumentRecord,
   EquipmentAsset,
@@ -333,6 +334,9 @@ export function KnowledgeLibraryView({
             </div>
           </section>
         </div>
+      </section>
+      <section className="workspace-stack">
+        <KnowledgeLibraryV2Panel token={token} selectedProjectId={selectedProjectId} documents={documents} />
       </section>
       <section className="workspace-stack">
         <div className="workspace-grid workspace-grid-3">

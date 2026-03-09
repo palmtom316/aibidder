@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, Response
 from app.core.config import settings
 
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".doc"}
+ALLOWED_LIBRARY_ATTACHMENT_EXTENSIONS = {".pdf", ".docx", ".doc", ".png", ".jpg", ".jpeg", ".webp"}
 _ENSURED_MINIO_BUCKETS: set[str] = set()
 
 
@@ -121,6 +122,12 @@ def validate_upload(filename: str) -> None:
         raise ValueError("Unsupported file type")
 
 
+def validate_library_attachment(filename: str) -> None:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_LIBRARY_ATTACHMENT_EXTENSIONS:
+        raise ValueError("Unsupported library attachment type")
+
+
 def storage_backend() -> StorageBackend:
     backend = settings.storage_backend.lower().strip()
     if backend == "minio":
@@ -131,6 +138,13 @@ def storage_backend() -> StorageBackend:
 def save_upload(project_id: int, file: UploadFile) -> str:
     suffix = Path(file.filename or "").suffix.lower()
     relative_path = f"project-{project_id}/{uuid4().hex}{suffix}"
+    payload = file.file.read()
+    return storage_backend().save_bytes(relative_path=relative_path, payload=payload, content_type=file.content_type)
+
+
+def save_library_attachment(organization_id: int, record_type: str, file: UploadFile) -> str:
+    suffix = Path(file.filename or "").suffix.lower()
+    relative_path = f"library/org-{organization_id}/{record_type}/{uuid4().hex}{suffix}"
     payload = file.file.read()
     return storage_backend().save_bytes(relative_path=relative_path, payload=payload, content_type=file.content_type)
 

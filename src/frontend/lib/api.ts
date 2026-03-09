@@ -15,6 +15,11 @@ export type RuntimeSettings = {
   api_base_url: string | null;
   api_key_configured: boolean;
   cors_allowed_origins: string[];
+  platform_config: {
+    provider: string;
+    api_base_url: string | null;
+    api_key_configured: boolean;
+  };
   default_models: {
     ocr_role: string;
     decomposition_navigator_role: string;
@@ -23,6 +28,20 @@ export type RuntimeSettings = {
     reviewer_role: string;
     adjudicator_role: string;
   };
+  role_configs: {
+    ocr_role: RuntimeRoleSettings;
+    decomposition_navigator_role: RuntimeRoleSettings;
+    decomposition_extractor_role: RuntimeRoleSettings;
+    writer_role: RuntimeRoleSettings;
+    reviewer_role: RuntimeRoleSettings;
+    adjudicator_role: RuntimeRoleSettings;
+  };
+};
+
+type RuntimeRoleSettings = {
+  api_base_url: string | null;
+  api_key_configured: boolean;
+  model: string;
 };
 
 export type RuntimeConnectivityRequest = {
@@ -185,6 +204,83 @@ export type KnowledgeBaseEntryFilters = {
   q?: string;
   created_from?: string;
   created_to?: string;
+};
+
+export type LibraryProjectCategoryOption = {
+  key: string;
+  label: string;
+};
+
+export type LibraryRecord = {
+  id: number;
+  organization_id: number;
+  project_id: number | null;
+  source_document_id: number | null;
+  record_type: string;
+  title: string;
+  project_category: string;
+  owner_name: string;
+  source_priority: string;
+  confidence_weight: number;
+  status: string;
+  ingestion_mode: string;
+  summary_text: string;
+  tags_json: string;
+  profile_json: string;
+  metadata_json: string;
+  current_version_no: number;
+  created_by_user_id: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LibraryAttachment = {
+  id: number;
+  library_record_id: number;
+  document_id: number | null;
+  attachment_role: string;
+  filename: string;
+  mime_type: string;
+  storage_path: string;
+  page_count: number;
+  ocr_status: string;
+  extracted_text: string;
+  metadata_json: string;
+  created_by_user_id: number;
+  created_at: string;
+};
+
+export type LibraryChunk = {
+  id: number;
+  organization_id: number;
+  project_id: number | null;
+  library_record_id: number;
+  library_record_version_id: number | null;
+  attachment_id: number | null;
+  chunk_type: string;
+  title: string;
+  section_path: string;
+  anchor: string;
+  page_start: number;
+  page_end: number;
+  content: string;
+  summary_text: string;
+  tags_json: string;
+  source_priority: string;
+  retrieval_weight: number;
+  fts_text: string;
+  metadata_json: string;
+  created_at: string;
+};
+
+export type LibraryRecordDetail = LibraryRecord & {
+  attachments: LibraryAttachment[];
+  chunks: LibraryChunk[];
+};
+
+export type LibrarySearchResult = {
+  record: LibraryRecord;
+  chunks: LibraryChunk[];
 };
 
 export type Qualification = {
@@ -656,6 +752,205 @@ export function runKnowledgeBaseCheck(token: string, entryId: number) {
     {
       method: "POST",
     },
+    token,
+  );
+}
+
+export function listLibraryProjectCategories(token: string) {
+  return apiRequest<LibraryProjectCategoryOption[]>("/api/v1/workbench/library/project-categories", {}, token);
+}
+
+export function listLibraryRecords(
+  token: string,
+  filters: {
+    record_type?: string;
+    project_category?: string;
+    status?: string;
+    q?: string;
+  } = {},
+) {
+  const params = new URLSearchParams();
+  if (filters.record_type) {
+    params.set("record_type", filters.record_type);
+  }
+  if (filters.project_category) {
+    params.set("project_category", filters.project_category);
+  }
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+  if (filters.q) {
+    params.set("q", filters.q);
+  }
+  const query = params.toString();
+  return apiRequest<LibraryRecord[]>(`/api/v1/workbench/library/records${query ? `?${query}` : ""}`, {}, token);
+}
+
+export function getLibraryRecordDetail(token: string, recordId: number) {
+  return apiRequest<LibraryRecordDetail>(`/api/v1/workbench/library/records/${recordId}`, {}, token);
+}
+
+export function searchLibraryRecords(
+  token: string,
+  payload: { q: string; record_type?: string; project_category?: string },
+) {
+  const params = new URLSearchParams();
+  params.set("q", payload.q);
+  if (payload.record_type) {
+    params.set("record_type", payload.record_type);
+  }
+  if (payload.project_category) {
+    params.set("project_category", payload.project_category);
+  }
+  return apiRequest<LibrarySearchResult[]>(`/api/v1/workbench/library/search?${params.toString()}`, {}, token);
+}
+
+export function createLibraryDocumentRecord(
+  token: string,
+  payload: {
+    project_id?: number | null;
+    source_document_id: number;
+    record_type: string;
+    title: string;
+    project_category: string;
+    owner_name?: string;
+  },
+) {
+  return apiRequest<LibraryRecord>(
+    "/api/v1/workbench/library/document-records",
+    { method: "POST", body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function createCompanyQualificationRecord(
+  token: string,
+  payload: {
+    project_id?: number | null;
+    title: string;
+    project_category: string;
+    owner_name?: string;
+    qualification_name: string;
+    qualification_level?: string;
+    valid_until?: string;
+    certificate_no?: string;
+  },
+) {
+  return apiRequest<LibraryRecord>(
+    "/api/v1/workbench/library/company-qualifications-v2",
+    { method: "POST", body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function createCompanyPerformanceRecord(
+  token: string,
+  payload: {
+    project_id?: number | null;
+    title: string;
+    project_category: string;
+    owner_name?: string;
+    contract_name: string;
+    project_features?: string;
+    contract_amount?: string;
+    start_date?: string;
+    completion_date?: string;
+  },
+) {
+  return apiRequest<LibraryRecord>(
+    "/api/v1/workbench/library/company-performances",
+    { method: "POST", body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function createCompanyAssetRecord(
+  token: string,
+  payload: {
+    project_id?: number | null;
+    title: string;
+    project_category: string;
+    owner_name?: string;
+    equipment_name: string;
+    equipment_brand?: string;
+    equipment_model?: string;
+    purchase_date?: string;
+  },
+) {
+  return apiRequest<LibraryRecord>(
+    "/api/v1/workbench/library/company-assets-v2",
+    { method: "POST", body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function createPersonnelQualificationRecord(
+  token: string,
+  payload: {
+    project_id?: number | null;
+    title: string;
+    project_category: string;
+    owner_name?: string;
+    person_name: string;
+    education?: string;
+    title_name?: string;
+    qualification_name?: string;
+    qualification_valid_until?: string;
+  },
+) {
+  return apiRequest<LibraryRecord>(
+    "/api/v1/workbench/library/personnel-qualifications-v2",
+    { method: "POST", body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function createPersonnelPerformanceRecord(
+  token: string,
+  payload: {
+    project_id?: number | null;
+    title: string;
+    project_category: string;
+    owner_name?: string;
+    person_name: string;
+    project_name: string;
+    project_role?: string;
+  },
+) {
+  return apiRequest<LibraryRecord>(
+    "/api/v1/workbench/library/personnel-performances-v2",
+    { method: "POST", body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function uploadLibraryRecordAttachment(
+  token: string,
+  recordId: number,
+  payload: { attachment_role: string; file: File },
+) {
+  const formData = new FormData();
+  formData.set("attachment_role", payload.attachment_role);
+  formData.set("file", payload.file);
+  return apiRequest<LibraryAttachment>(
+    `/api/v1/workbench/library/records/${recordId}/attachments/upload`,
+    { method: "POST", body: formData },
+    token,
+  );
+}
+
+export function updateLibraryRecord(
+  token: string,
+  recordId: number,
+  payload: {
+    status?: string;
+    summary_text?: string;
+    review_notes?: string;
+  },
+) {
+  return apiRequest<LibraryRecord>(
+    `/api/v1/workbench/library/records/${recordId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
     token,
   );
 }

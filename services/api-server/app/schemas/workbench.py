@@ -41,6 +41,149 @@ class KnowledgeBaseEntryResponse(BaseModel):
     created_at: datetime
 
 
+class LibraryProjectCategoryOption(BaseModel):
+    key: str
+    label: str
+
+
+class LibraryRecordCreateBase(BaseModel):
+    project_id: int | None = None
+    title: str = Field(min_length=1, max_length=255)
+    project_category: str = Field(min_length=1, max_length=128)
+    owner_name: str = Field(default="", max_length=255)
+
+
+class LibraryDocumentRecordCreate(LibraryRecordCreateBase):
+    source_document_id: int = Field(ge=1)
+    record_type: str = Field(min_length=1, max_length=64)
+
+
+class CompanyQualificationRecordCreate(LibraryRecordCreateBase):
+    qualification_name: str = Field(min_length=1, max_length=255)
+    qualification_level: str = Field(default="", max_length=128)
+    valid_until: str = Field(default="", max_length=64)
+    certificate_no: str = Field(default="", max_length=255)
+
+
+class CompanyPerformanceRecordCreate(LibraryRecordCreateBase):
+    contract_name: str = Field(min_length=1, max_length=255)
+    project_features: str = Field(default="")
+    contract_amount: str = Field(default="", max_length=128)
+    start_date: str = Field(default="", max_length=64)
+    completion_date: str = Field(default="", max_length=64)
+
+
+class CompanyAssetRecordCreate(LibraryRecordCreateBase):
+    equipment_name: str = Field(min_length=1, max_length=255)
+    equipment_brand: str = Field(default="", max_length=255)
+    equipment_model: str = Field(default="", max_length=255)
+    purchase_date: str = Field(default="", max_length=64)
+
+
+class PersonnelQualificationRecordCreate(LibraryRecordCreateBase):
+    person_name: str = Field(min_length=1, max_length=255)
+    education: str = Field(default="", max_length=255)
+    title_name: str = Field(default="", max_length=255)
+    qualification_name: str = Field(default="", max_length=255)
+    qualification_valid_until: str = Field(default="", max_length=64)
+
+
+class PersonnelPerformanceRecordCreate(LibraryRecordCreateBase):
+    person_name: str = Field(min_length=1, max_length=255)
+    project_name: str = Field(min_length=1, max_length=255)
+    project_role: str = Field(default="", max_length=255)
+
+
+class LibraryRecordReviewUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    project_category: str | None = Field(default=None, min_length=1, max_length=128)
+    owner_name: str | None = Field(default=None, max_length=255)
+    summary_text: str | None = None
+    tags_json: str | None = None
+    profile_json: str | None = None
+    review_notes: str | None = None
+    status: str | None = Field(default=None, max_length=64)
+    confidence_weight: float | None = None
+
+
+class LibraryAttachmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    library_record_id: int
+    document_id: int | None
+    attachment_role: str
+    filename: str
+    mime_type: str
+    storage_path: str
+    page_count: int
+    ocr_status: str
+    extracted_text: str
+    metadata_json: str
+    created_by_user_id: int
+    created_at: datetime
+
+
+class LibraryChunkResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    project_id: int | None
+    library_record_id: int
+    library_record_version_id: int | None
+    attachment_id: int | None
+    chunk_type: str
+    title: str
+    section_path: str
+    anchor: str
+    page_start: int
+    page_end: int
+    content: str
+    summary_text: str
+    tags_json: str
+    source_priority: str
+    retrieval_weight: float
+    fts_text: str
+    metadata_json: str
+    created_at: datetime
+
+
+class LibraryRecordResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    project_id: int | None
+    source_document_id: int | None
+    record_type: str
+    title: str
+    project_category: str
+    owner_name: str
+    source_priority: str
+    confidence_weight: float
+    status: str
+    ingestion_mode: str
+    summary_text: str
+    tags_json: str
+    profile_json: str
+    metadata_json: str
+    current_version_no: int
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class LibraryRecordDetailResponse(LibraryRecordResponse):
+    attachments: list[LibraryAttachmentResponse]
+    chunks: list[LibraryChunkResponse]
+
+
+class LibrarySearchResult(BaseModel):
+    record: LibraryRecordResponse
+    chunks: list[LibraryChunkResponse]
+
+
 class PipelineRunCreate(BaseModel):
     project_id: int
     source_document_id: int | None = None

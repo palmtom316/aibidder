@@ -4,24 +4,33 @@ from pathlib import Path
 from collections.abc import Callable, Sequence
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.core.config import settings
-from app.core.storage import build_download_response
+from app.core.storage import build_download_response, save_library_attachment, validate_library_attachment
 from app.api.pagination import slice_results
 from app.db.models import (
+    CompanyAssetProfile,
+    CompanyPerformanceProfile,
+    CompanyQualificationProfile,
     DecompositionRun,
     Document,
     EquipmentAsset,
     GeneratedSection,
     GenerationJob,
     KnowledgeBaseEntry,
+    LibraryAttachment,
+    LibraryChunk,
+    LibraryRecord,
+    LibraryRecordVersion,
     LayoutJob,
     PersonnelAsset,
+    PersonnelPerformanceProfile,
+    PersonnelQualificationProfile,
     Project,
     ProjectCredential,
     ProjectMember,
@@ -35,6 +44,9 @@ from app.db.models import (
 from app.db.session import get_db
 from app.schemas.auth import UserIdentity
 from app.schemas.workbench import (
+    CompanyAssetRecordCreate,
+    CompanyPerformanceRecordCreate,
+    CompanyQualificationRecordCreate,
     DecompositionRunResponse,
     EquipmentAssetCreate,
     EquipmentAssetResponse,
@@ -44,12 +56,22 @@ from app.schemas.workbench import (
     GenerationJobResponse,
     KnowledgeBaseEntryCreate,
     KnowledgeBaseEntryResponse,
+    LibraryAttachmentResponse,
+    LibraryChunkResponse,
+    LibraryDocumentRecordCreate,
+    LibraryProjectCategoryOption,
+    LibraryRecordDetailResponse,
+    LibraryRecordResponse,
+    LibraryRecordReviewUpdate,
+    LibrarySearchResult,
     LayoutJobCreate,
     LayoutJobResponse,
     ModuleSummary,
     PersonnelAssetCreate,
     PersonnelAssetResponse,
     PersonnelAssetUpdate,
+    PersonnelPerformanceRecordCreate,
+    PersonnelQualificationRecordCreate,
     PipelineRunCreate,
     ProjectCredentialCreate,
     ProjectCredentialResponse,
@@ -70,6 +92,18 @@ from app.services.audit_log import write_audit_log
 from app.services.generation_pipeline import execute_generation_job
 from app.services.knowledge_base_checks import run_knowledge_base_entry_check
 from app.services.layout_pipeline import execute_layout_job
+from app.services.library_records import (
+    LIBRARY_PROJECT_CATEGORIES,
+    build_attachment_from_parsed_file,
+    confidence_weight_for_record_type,
+    create_library_record_version,
+    ensure_project_category,
+    latest_record_version,
+    parse_attachment_file,
+    rebuild_chunks_for_record,
+    source_priority_for_record_type,
+    sync_profile_table,
+)
 from app.services.review_pipeline import execute_review_run, remediate_review_issue
 from app.services.tender_decomposition import execute_decomposition_run
 from app.services.workbench_pipeline_tasks import dispatch_workbench_pipeline_task
@@ -334,6 +368,473 @@ def run_library_entry_check(
     db.commit()
     db.refresh(entry)
     return entry
+
+
+def _serialize_library_record_detail(db: Session, record: LibraryRecord) -> LibraryRecordDetailResponse:
+    attachments = list(
+        db.scalars(
+            select(LibraryAttachment)
+            .where(LibraryAttachment.library_record_id == record.id)
+            .order_by(LibraryAttachment.id.asc())
+        )
+    )
+    chunks = list(
+        db.scalars(
+            select(LibraryChunk)
+            .where(LibraryChunk.library_record_id == record.id)
+            .order_by(LibraryChunk.retrieval_weight.desc(), LibraryChunk.id.asc())
+        )
+    )
+    payload = LibraryRecordResponse.model_validate(record).model_dump()
+    payload["attachments"] = [LibraryAttachmentResponse.model_validate(item).model_dump() for item in attachments]
+    payload["chunks"] = [LibraryChunkResponse.model_validate(item).model_dump() for item in chunks]
+    return LibraryRecordDetailResponse(**payload)
+
+
+def _build_library_record(
+    *,
+    db: Session,
+    current_user: UserIdentity,
+    request: Request,
+    record_type: str,
+    title: str,
+    project_category: str,
+    owner_name: str,
+    project_id: int | None,
+    source_document_id: int | None,
+    ingestion_mode: str,
+    profile_json: str,
+    metadata_json: str = "{}",
+) -> LibraryRecord:
+    ensure_project_category(project_category)
+    source_priority = source_priority_for_record_type(record_type)
+    record = LibraryRecord(
+        organization_id=current_user.organization_id,
+        project_id=project_id,
+        source_document_id=source_document_id,
+        record_type=record_type,
+        title=title,
+        project_category=project_category,
+        owner_name=owner_name,
+        source_priority=source_priority,
+        confidence_weight=confidence_weight_for_record_type(record_type),
+        status="awaiting_review" if source_document_id is not None else "published",
+        ingestion_mode=ingestion_mode,
+        summary_text="",
+        tags_json=json.dumps([record_type, project_category], ensure_ascii=False),
+        profile_json=profile_json,
+        metadata_json=metadata_json,
+        current_version_no=1,
+        created_by_user_id=current_user.id,
+    )
+    db.add(record)
+    db.flush()
+    sync_profile_table(db, record)
+    chunks = rebuild_chunks_for_record(db, record)
+    if chunks and not record.summary_text:
+        record.summary_text = chunks[0].summary_text
+    version = latest_record_version(db, record.id)
+    if version is not None:
+        version.summary_text = record.summary_text
+    write_audit_log(
+        db,
+        action=f"workbench.library.{record_type}.create",
+        organization_id=current_user.organization_id,
+        project_id=project_id,
+        user_id=current_user.id,
+        resource_type="library_record",
+        resource_id=record.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={
+            "record_type": record_type,
+            "project_category": project_category,
+            "source_document_id": source_document_id,
+        },
+    )
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+@router.get("/library/project-categories", response_model=list[LibraryProjectCategoryOption])
+def list_library_project_categories(
+    current_user: UserIdentity = Depends(get_current_user),
+) -> list[LibraryProjectCategoryOption]:
+    _ = current_user
+    return [LibraryProjectCategoryOption(key=item, label=item) for item in LIBRARY_PROJECT_CATEGORIES]
+
+
+@router.get("/library/records", response_model=list[LibraryRecordResponse])
+def list_library_records_v2(
+    record_type: str | None = Query(None, min_length=1, max_length=64),
+    project_category: str | None = Query(None, min_length=1, max_length=128),
+    status_value: str | None = Query(None, alias="status", min_length=1, max_length=64),
+    q: str | None = Query(None, min_length=1, max_length=255),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LibraryRecord]:
+    stmt = select(LibraryRecord).where(LibraryRecord.organization_id == current_user.organization_id)
+    if record_type is not None:
+        stmt = stmt.where(LibraryRecord.record_type == record_type)
+    if project_category is not None:
+        stmt = stmt.where(LibraryRecord.project_category == project_category)
+    if status_value is not None:
+        stmt = stmt.where(LibraryRecord.status == status_value)
+    if q is not None:
+        keyword = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                LibraryRecord.title.ilike(keyword),
+                LibraryRecord.owner_name.ilike(keyword),
+                LibraryRecord.summary_text.ilike(keyword),
+            )
+        )
+    stmt = stmt.order_by(LibraryRecord.confidence_weight.desc(), LibraryRecord.updated_at.desc(), LibraryRecord.id.desc())
+    return slice_results(list(db.scalars(stmt)), offset=offset, limit=limit)
+
+
+@router.get("/library/records/{record_id}", response_model=LibraryRecordDetailResponse)
+def get_library_record_detail(
+    record_id: int,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecordDetailResponse:
+    record = db.scalar(
+        select(LibraryRecord).where(
+            LibraryRecord.id == record_id,
+            LibraryRecord.organization_id == current_user.organization_id,
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library record not found")
+    return _serialize_library_record_detail(db, record)
+
+
+@router.get("/library/search", response_model=list[LibrarySearchResult])
+def search_library_records(
+    q: str = Query(..., min_length=1, max_length=255),
+    record_type: str | None = Query(None, min_length=1, max_length=64),
+    project_category: str | None = Query(None, min_length=1, max_length=128),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LibrarySearchResult]:
+    keyword = f"%{q.strip()}%"
+    stmt = (
+        select(LibraryChunk)
+        .join(LibraryRecord, LibraryRecord.id == LibraryChunk.library_record_id)
+        .where(
+            LibraryRecord.organization_id == current_user.organization_id,
+            or_(
+                LibraryChunk.fts_text.ilike(keyword),
+                LibraryRecord.title.ilike(keyword),
+                LibraryRecord.summary_text.ilike(keyword),
+            ),
+        )
+        .order_by(LibraryChunk.retrieval_weight.desc(), LibraryChunk.id.asc())
+        .limit(limit)
+    )
+    if record_type is not None:
+        stmt = stmt.where(LibraryRecord.record_type == record_type)
+    if project_category is not None:
+        stmt = stmt.where(LibraryRecord.project_category == project_category)
+    chunk_rows = list(db.scalars(stmt))
+    grouped: dict[int, list[LibraryChunk]] = {}
+    records: dict[int, LibraryRecord] = {}
+    for chunk in chunk_rows:
+        grouped.setdefault(chunk.library_record_id, []).append(chunk)
+        if chunk.library_record_id not in records:
+            records[chunk.library_record_id] = db.get(LibraryRecord, chunk.library_record_id)
+    return [
+        LibrarySearchResult(
+            record=LibraryRecordResponse.model_validate(records[record_id]),
+            chunks=[LibraryChunkResponse.model_validate(item) for item in items],
+        )
+        for record_id, items in grouped.items()
+        if records.get(record_id) is not None
+    ]
+
+
+@router.post("/library/document-records", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
+def create_library_document_record(
+    payload: LibraryDocumentRecordCreate,
+    request: Request,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    _ensure_project_and_document_access(
+        project_id=payload.project_id,
+        document_id=payload.source_document_id,
+        current_user=current_user,
+        db=db,
+    )
+    if payload.record_type not in {"historical_bid", "excellent_bid", "norm_spec"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported document record type")
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type=payload.record_type,
+        title=payload.title,
+        project_category=payload.project_category,
+        owner_name=payload.owner_name,
+        project_id=payload.project_id,
+        source_document_id=payload.source_document_id,
+        ingestion_mode="document_pipeline",
+        profile_json=json.dumps(
+            {
+                "source_document_id": payload.source_document_id,
+                "record_type": payload.record_type,
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+
+@router.post("/library/company-qualifications-v2", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
+def create_company_qualification_record(
+    payload: CompanyQualificationRecordCreate,
+    request: Request,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type="company_qualification",
+        title=payload.title,
+        project_category=payload.project_category,
+        owner_name=payload.owner_name,
+        project_id=payload.project_id,
+        source_document_id=None,
+        ingestion_mode="manual_form",
+        profile_json=json.dumps(payload.model_dump(exclude={"project_id", "title", "project_category", "owner_name"}), ensure_ascii=False),
+    )
+
+
+@router.post("/library/company-performances", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
+def create_company_performance_record(
+    payload: CompanyPerformanceRecordCreate,
+    request: Request,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    profile = payload.model_dump(exclude={"project_id", "title", "project_category", "owner_name"})
+    profile["project_category"] = payload.project_category
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type="company_performance",
+        title=payload.title,
+        project_category=payload.project_category,
+        owner_name=payload.owner_name,
+        project_id=payload.project_id,
+        source_document_id=None,
+        ingestion_mode="manual_form",
+        profile_json=json.dumps(profile, ensure_ascii=False),
+    )
+
+
+@router.post("/library/company-assets-v2", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
+def create_company_asset_record(
+    payload: CompanyAssetRecordCreate,
+    request: Request,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type="company_asset",
+        title=payload.title,
+        project_category=payload.project_category,
+        owner_name=payload.owner_name,
+        project_id=payload.project_id,
+        source_document_id=None,
+        ingestion_mode="manual_form",
+        profile_json=json.dumps(payload.model_dump(exclude={"project_id", "title", "project_category", "owner_name"}), ensure_ascii=False),
+    )
+
+
+@router.post("/library/personnel-qualifications-v2", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
+def create_personnel_qualification_record(
+    payload: PersonnelQualificationRecordCreate,
+    request: Request,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type="personnel_qualification",
+        title=payload.title,
+        project_category=payload.project_category,
+        owner_name=payload.owner_name,
+        project_id=payload.project_id,
+        source_document_id=None,
+        ingestion_mode="manual_form",
+        profile_json=json.dumps(payload.model_dump(exclude={"project_id", "title", "project_category", "owner_name"}), ensure_ascii=False),
+    )
+
+
+@router.post("/library/personnel-performances-v2", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
+def create_personnel_performance_record(
+    payload: PersonnelPerformanceRecordCreate,
+    request: Request,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    profile = payload.model_dump(exclude={"project_id", "title", "project_category", "owner_name"})
+    profile["project_category"] = payload.project_category
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type="personnel_performance",
+        title=payload.title,
+        project_category=payload.project_category,
+        owner_name=payload.owner_name,
+        project_id=payload.project_id,
+        source_document_id=None,
+        ingestion_mode="manual_form",
+        profile_json=json.dumps(profile, ensure_ascii=False),
+    )
+
+
+@router.patch("/library/records/{record_id}", response_model=LibraryRecordResponse)
+def update_library_record_review(
+    record_id: int,
+    payload: LibraryRecordReviewUpdate,
+    request: Request,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    record = db.scalar(
+        select(LibraryRecord).where(
+            LibraryRecord.id == record_id,
+            LibraryRecord.organization_id == current_user.organization_id,
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library record not found")
+
+    changes = payload.model_dump(exclude_unset=True)
+    if "project_category" in changes:
+        ensure_project_category(changes["project_category"])
+    for field, value in changes.items():
+        if field == "profile_json" and value is not None:
+            setattr(record, field, value)
+            sync_profile_table(db, record)
+            continue
+        setattr(record, field, value)
+    record.current_version_no += 1
+    create_library_record_version(db, record=record, review_notes=changes.get("review_notes", ""))
+    if record.record_type in {"historical_bid", "excellent_bid", "norm_spec"}:
+        rebuild_chunks_for_record(db, record)
+    write_audit_log(
+        db,
+        action="workbench.library.record.review_update",
+        organization_id=current_user.organization_id,
+        project_id=record.project_id,
+        user_id=current_user.id,
+        resource_type="library_record",
+        resource_id=record.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail=changes,
+    )
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+@router.post("/library/records/{record_id}/attachments/upload", response_model=LibraryAttachmentResponse, status_code=status.HTTP_201_CREATED)
+def upload_library_record_attachment(
+    record_id: int,
+    request: Request,
+    attachment_role: str = Form(..., min_length=1, max_length=64),
+    file: UploadFile = File(...),
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryAttachment:
+    record = db.scalar(
+        select(LibraryRecord).where(
+            LibraryRecord.id == record_id,
+            LibraryRecord.organization_id == current_user.organization_id,
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library record not found")
+    try:
+        validate_library_attachment(file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    storage_path = save_library_attachment(current_user.organization_id, record.record_type, file)
+    attachment = LibraryAttachment(
+        library_record_id=record.id,
+        attachment_role=attachment_role,
+        filename=file.filename or "attachment",
+        mime_type=file.content_type or "application/octet-stream",
+        storage_path=storage_path,
+        ocr_status="processing",
+        created_by_user_id=current_user.id,
+    )
+    db.add(attachment)
+    db.flush()
+    parsed_document = parse_attachment_file(storage_path, attachment.filename)
+    if parsed_document is not None:
+        attachment.extracted_text = parsed_document.markdown
+        attachment.page_count = len(parsed_document.structured_payload.get("sections", []))
+        attachment.ocr_status = "parsed"
+        version = latest_record_version(db, record.id)
+        for chunk in build_attachment_from_parsed_file(
+            attachment=attachment,
+            parsed_document=parsed_document,
+            record=record,
+            version=version,
+        ):
+            db.add(chunk)
+    else:
+        attachment.ocr_status = "stored"
+    write_audit_log(
+        db,
+        action="workbench.library.attachment.upload",
+        organization_id=current_user.organization_id,
+        project_id=record.project_id,
+        user_id=current_user.id,
+        resource_type="library_attachment",
+        resource_id=attachment.id,
+        request_id=getattr(request.state, "request_id", ""),
+        detail={"record_id": record.id, "attachment_role": attachment_role, "filename": attachment.filename},
+    )
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@router.get("/library/attachments/{attachment_id}/download")
+def download_library_attachment(
+    attachment_id: int,
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    attachment = db.scalar(
+        select(LibraryAttachment)
+        .join(LibraryRecord, LibraryRecord.id == LibraryAttachment.library_record_id)
+        .where(
+            LibraryAttachment.id == attachment_id,
+            LibraryRecord.organization_id == current_user.organization_id,
+        )
+    )
+    if attachment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library attachment not found")
+    return build_download_response(attachment.storage_path, filename=attachment.filename)
 
 
 def _list_library_records(db: Session, current_user: UserIdentity, model: type) -> list:
