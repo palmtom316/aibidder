@@ -823,6 +823,31 @@ export function createLibraryDocumentRecord(
   );
 }
 
+export function uploadLibraryDocumentRecord(
+  token: string,
+  payload: {
+    project_id: number;
+    record_type: string;
+    title: string;
+    project_category: string;
+    owner_name?: string;
+    file: File;
+  },
+) {
+  const formData = new FormData();
+  formData.set("project_id", String(payload.project_id));
+  formData.set("record_type", payload.record_type);
+  formData.set("title", payload.title);
+  formData.set("project_category", payload.project_category);
+  formData.set("owner_name", payload.owner_name ?? "");
+  formData.set("file", payload.file);
+  return apiRequest<LibraryRecord>(
+    "/api/v1/workbench/library/document-records/upload",
+    { method: "POST", body: formData },
+    token,
+  );
+}
+
 export function createCompanyQualificationRecord(
   token: string,
   payload: {

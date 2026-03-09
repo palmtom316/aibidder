@@ -15,6 +15,7 @@ import {
   searchLibraryRecords,
   updateLibraryRecord,
   uploadLibraryRecordAttachment,
+  uploadLibraryDocumentRecord,
   type DocumentRecord,
   type LibraryProjectCategoryOption,
   type LibraryRecord,
@@ -76,6 +77,7 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
   const [message, setMessage] = useState("新版资料库支持统一入库、附件挂载和检索。");
 
   const [documentSourceId, setDocumentSourceId] = useState<number | null>(null);
+  const [documentUploadFile, setDocumentUploadFile] = useState<File | null>(null);
   const [projectCategory, setProjectCategory] = useState("配网工程");
   const [title, setTitle] = useState("");
   const [ownerName, setOwnerName] = useState("");
@@ -164,18 +166,28 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
     try {
       let record: LibraryRecord;
       if (activeTab === "historical_bid" || activeTab === "excellent_bid" || activeTab === "norm_spec") {
-        if (!documentSourceId) {
-          setMessage("请先选择一份已上传文档。");
+        if (documentUploadFile && selectedProjectId) {
+          record = await uploadLibraryDocumentRecord(token, {
+            project_id: selectedProjectId,
+            record_type: activeTab,
+            title: title || documentUploadFile.name,
+            project_category: projectCategory,
+            owner_name: ownerName,
+            file: documentUploadFile,
+          });
+        } else if (!documentSourceId) {
+          setMessage("请先上传文档，或选择一份已上传文档。");
           return;
+        } else {
+          record = await createLibraryDocumentRecord(token, {
+            project_id: selectedProjectId,
+            source_document_id: documentSourceId,
+            record_type: activeTab,
+            title: title || documents.find((item) => item.id === documentSourceId)?.filename || "未命名资料",
+            project_category: projectCategory,
+            owner_name: ownerName,
+          });
         }
-        record = await createLibraryDocumentRecord(token, {
-          project_id: selectedProjectId,
-          source_document_id: documentSourceId,
-          record_type: activeTab,
-          title: title || documents.find((item) => item.id === documentSourceId)?.filename || "未命名资料",
-          project_category: projectCategory,
-          owner_name: ownerName,
-        });
       } else if (activeTab === "company_qualification") {
         record = await createCompanyQualificationRecord(token, {
           project_id: selectedProjectId,
@@ -236,6 +248,7 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
 
       await loadRecords(token, activeTab);
       await handleSelectRecord(record.id);
+      setDocumentUploadFile(null);
       setMessage(`已新增 ${RECORD_TABS.find((item) => item.key === activeTab)?.label} 记录。`);
     } finally {
       setBusyLabel("");
@@ -456,20 +469,26 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
             </div>
 
             {activeTab === "historical_bid" || activeTab === "excellent_bid" || activeTab === "norm_spec" ? (
-              <label>
-                选择已上传文档
-                <select
-                  value={documentSourceId ?? ""}
-                  onChange={(event) => setDocumentSourceId(Number(event.target.value) || null)}
-                >
-                  <option value="">请选择</option>
-                  {documents.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.filename} · {item.document_type}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="three-column three-column-equal">
+                <label>
+                  直接上传
+                  <input type="file" onChange={(event) => setDocumentUploadFile(event.target.files?.[0] ?? null)} />
+                </label>
+                <label>
+                  或选择已上传文档
+                  <select
+                    value={documentSourceId ?? ""}
+                    onChange={(event) => setDocumentSourceId(Number(event.target.value) || null)}
+                  >
+                    <option value="">请选择</option>
+                    {documents.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.filename} · {item.document_type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             ) : (
               renderStructuredFields()
             )}

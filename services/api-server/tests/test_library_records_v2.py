@@ -165,3 +165,45 @@ def test_company_performance_record_accepts_attachment_upload_and_exposes_chunks
     search_payload = search.json()
     assert len(search_payload) >= 1
     assert search_payload[0]["record"]["id"] == record_id
+
+
+def test_upload_library_document_record_creates_document_and_record_in_one_step() -> None:
+    client = TestClient(app)
+    token = _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    project = client.post("/api/v1/projects", json={"name": "Direct Upload Library Project"}, headers=headers)
+    assert project.status_code == 201, project.text
+    project_id = project.json()["id"]
+
+    created = client.post(
+        "/api/v1/workbench/library/document-records/upload",
+        data={
+            "project_id": str(project_id),
+            "record_type": "historical_bid",
+            "title": "某用户工程历史投标文件",
+            "project_category": "用户工程",
+            "owner_name": "市场经营中心",
+        },
+        files={
+            "file": (
+                "history.docx",
+                _build_docx(
+                    ("Heading1", "第一章 项目概况"),
+                    ("Normal", "本项目属于用户工程，重点在设备安装与调试。"),
+                ),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()
+    assert payload["record_type"] == "historical_bid"
+    assert payload["source_document_id"] is not None
+    assert payload["project_category"] == "用户工程"
+
+    detail = client.get(f"/api/v1/workbench/library/records/{payload['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    detail_payload = detail.json()
+    assert len(detail_payload["chunks"]) >= 1

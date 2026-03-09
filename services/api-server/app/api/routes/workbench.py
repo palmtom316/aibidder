@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.core.config import settings
-from app.core.storage import build_download_response, save_library_attachment, validate_library_attachment
+from app.core.storage import (
+    build_download_response,
+    save_library_attachment,
+    save_upload,
+    validate_library_attachment,
+    validate_upload,
+)
 from app.api.pagination import slice_results
 from app.db.models import (
     CompanyAssetProfile,
@@ -19,6 +25,8 @@ from app.db.models import (
     CompanyQualificationProfile,
     DecompositionRun,
     Document,
+    DocumentArtifact,
+    DocumentVersion,
     EquipmentAsset,
     GeneratedSection,
     GenerationJob,
@@ -90,6 +98,7 @@ from app.schemas.workbench import (
 )
 from app.services.audit_log import write_audit_log
 from app.services.generation_pipeline import execute_generation_job
+from app.services.document_ingestion_tasks import finalize_document_ingestion
 from app.services.knowledge_base_checks import run_knowledge_base_entry_check
 from app.services.layout_pipeline import execute_layout_job
 from app.services.library_records import (
@@ -456,6 +465,53 @@ def _build_library_record(
     return record
 
 
+def _upload_project_document_for_library(
+    *,
+    db: Session,
+    project_id: int,
+    document_type: str,
+    file: UploadFile,
+    current_user: UserIdentity,
+) -> Document:
+    storage_path = save_upload(project_id, file)
+    document = Document(
+        project_id=project_id,
+        filename=file.filename or "upload",
+        document_type=document_type,
+        mime_type=file.content_type or "application/octet-stream",
+        file_size=0,
+        created_by_user_id=current_user.id,
+    )
+    db.add(document)
+    db.flush()
+
+    document_version = DocumentVersion(
+        document_id=document.id,
+        version_no=1,
+        status="uploaded",
+    )
+    db.add(document_version)
+    db.flush()
+
+    db.add(
+        DocumentArtifact(
+            document_version_id=document_version.id,
+            artifact_type="source",
+            storage_path=storage_path,
+        )
+    )
+
+    finalize_document_ingestion(
+        db,
+        document=document,
+        document_version=document_version,
+        source_path=storage_path,
+        filename=file.filename or "upload",
+    )
+    db.flush()
+    return document
+
+
 @router.get("/library/project-categories", response_model=list[LibraryProjectCategoryOption])
 def list_library_project_categories(
     current_user: UserIdentity = Depends(get_current_user),
@@ -555,6 +611,53 @@ def search_library_records(
         for record_id, items in grouped.items()
         if records.get(record_id) is not None
     ]
+
+
+@router.post("/library/document-records/upload", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)
+def upload_library_document_record(
+    request: Request,
+    project_id: int = Form(...),
+    record_type: str = Form(...),
+    title: str = Form(...),
+    project_category: str = Form(...),
+    owner_name: str = Form(default=""),
+    file: UploadFile = File(...),
+    current_user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LibraryRecord:
+    _require_project_access(project_id, current_user, db)
+    if record_type not in {"historical_bid", "excellent_bid", "norm_spec"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported document record type")
+    try:
+        validate_upload(file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if record_type == "norm_spec" and not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Norm specification must be uploaded as PDF")
+
+    document = _upload_project_document_for_library(
+        db=db,
+        project_id=project_id,
+        document_type="norm" if record_type == "norm_spec" else "proposal",
+        file=file,
+        current_user=current_user,
+    )
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type=record_type,
+        title=title,
+        project_category=project_category,
+        owner_name=owner_name,
+        project_id=project_id,
+        source_document_id=document.id,
+        ingestion_mode="document_pipeline",
+        profile_json=json.dumps(
+            {"source_document_id": document.id, "record_type": record_type, "uploaded_from_library": True},
+            ensure_ascii=False,
+        ),
+    )
 
 
 @router.post("/library/document-records", response_model=LibraryRecordResponse, status_code=status.HTTP_201_CREATED)

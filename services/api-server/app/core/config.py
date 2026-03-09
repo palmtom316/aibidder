@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     runtime_provider: str = "openai_compatible"
     runtime_api_base_url: str = "https://api.siliconflow.cn/v1"
     runtime_api_key: str | None = None
+    ocr_provider: str = "openai_compatible"
     ocr_role_model: str = "deepseek-ai/DeepSeek-OCR"
     norm_summary_role_model: str = "Qwen/Qwen2.5-7B-Instruct-1M"
     decomposition_navigator_role_model: str = "deepseek-ai/DeepSeek-V3.2"
@@ -59,6 +60,8 @@ class Settings(BaseSettings):
     ocr_api_base_url: str | None = None
     ocr_api_key: str | None = None
     ocr_request_timeout_seconds: float = 30.0
+    mineru_api_base_url: str | None = None
+    mineru_api_key: str | None = None
     norm_summary_request_timeout_seconds: float = 45.0
 
     async_document_ingestion: bool = False

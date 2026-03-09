@@ -11,12 +11,12 @@ from httpx import ASGITransport, AsyncClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_DB_PATH = Path(tempfile.gettempdir()) / "aibidder-api-tests.db"
-
-if TEST_DB_PATH.exists():
-    TEST_DB_PATH.unlink(missing_ok=True)
-
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+DEFAULT_TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
+database_url = os.environ.setdefault("DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
 os.environ.setdefault("ENV", "test")
+
+if database_url == DEFAULT_TEST_DATABASE_URL and TEST_DB_PATH.exists():
+    TEST_DB_PATH.unlink(missing_ok=True)
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
