@@ -294,47 +294,6 @@ export type LibraryReview = {
   created_at: string;
 };
 
-export type Qualification = {
-  id: number;
-  organization_id: number;
-  qualification_name: string;
-  qualification_level: string;
-  certificate_no: string;
-  valid_until: string;
-  metadata_json: string;
-  created_at: string;
-};
-
-export type PersonnelAsset = {
-  id: number;
-  organization_id: number;
-  full_name: string;
-  role_title: string;
-  certificate_no: string;
-  metadata_json: string;
-  created_at: string;
-};
-
-export type EquipmentAsset = {
-  id: number;
-  organization_id: number;
-  equipment_name: string;
-  model_no: string;
-  quantity: number;
-  metadata_json: string;
-  created_at: string;
-};
-
-export type ProjectCredential = {
-  id: number;
-  organization_id: number;
-  project_name: string;
-  credential_type: string;
-  owner_name: string;
-  metadata_json: string;
-  created_at: string;
-};
-
 export type DecompositionRun = {
   id: number;
   organization_id: number;
@@ -981,6 +940,8 @@ export function updateLibraryRecord(
   payload: {
     status?: string;
     summary_text?: string;
+    tags_json?: string;
+    confidence_weight?: number;
     review_notes?: string;
   },
 ) {
@@ -1006,139 +967,6 @@ export function listLibraryReviews(
   return apiRequest<LibraryReview[]>(`/api/v1/workbench/library/reviews${query ? `?${query}` : ""}`, {}, token);
 }
 
-
-export function listQualifications(token: string) {
-  return apiRequest<Qualification[]>("/api/v1/workbench/library/qualifications", {}, token);
-}
-
-export function createQualification(
-  token: string,
-  payload: {
-    qualification_name: string;
-    qualification_level?: string;
-    certificate_no?: string;
-    valid_until?: string;
-    metadata_json?: string;
-  },
-) {
-  return apiRequest<Qualification>(
-    "/api/v1/workbench/library/qualifications",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    token,
-  );
-}
-
-export function deleteQualification(token: string, qualificationId: number) {
-  return apiRequest<void>(
-    `/api/v1/workbench/library/qualifications/${qualificationId}`,
-    {
-      method: "DELETE",
-    },
-    token,
-  );
-}
-
-export function listPersonnelAssets(token: string) {
-  return apiRequest<PersonnelAsset[]>("/api/v1/workbench/library/personnel-assets", {}, token);
-}
-
-export function createPersonnelAsset(
-  token: string,
-  payload: {
-    full_name: string;
-    role_title?: string;
-    certificate_no?: string;
-    metadata_json?: string;
-  },
-) {
-  return apiRequest<PersonnelAsset>(
-    "/api/v1/workbench/library/personnel-assets",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    token,
-  );
-}
-
-export function deletePersonnelAsset(token: string, personnelAssetId: number) {
-  return apiRequest<void>(
-    `/api/v1/workbench/library/personnel-assets/${personnelAssetId}`,
-    {
-      method: "DELETE",
-    },
-    token,
-  );
-}
-
-export function listEquipmentAssets(token: string) {
-  return apiRequest<EquipmentAsset[]>("/api/v1/workbench/library/equipment-assets", {}, token);
-}
-
-export function createEquipmentAsset(
-  token: string,
-  payload: {
-    equipment_name: string;
-    model_no?: string;
-    quantity?: number;
-    metadata_json?: string;
-  },
-) {
-  return apiRequest<EquipmentAsset>(
-    "/api/v1/workbench/library/equipment-assets",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    token,
-  );
-}
-
-export function deleteEquipmentAsset(token: string, equipmentAssetId: number) {
-  return apiRequest<void>(
-    `/api/v1/workbench/library/equipment-assets/${equipmentAssetId}`,
-    {
-      method: "DELETE",
-    },
-    token,
-  );
-}
-
-export function listProjectCredentials(token: string) {
-  return apiRequest<ProjectCredential[]>("/api/v1/workbench/library/project-credentials", {}, token);
-}
-
-export function createProjectCredential(
-  token: string,
-  payload: {
-    project_name: string;
-    credential_type?: string;
-    owner_name?: string;
-    metadata_json?: string;
-  },
-) {
-  return apiRequest<ProjectCredential>(
-    "/api/v1/workbench/library/project-credentials",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    token,
-  );
-}
-
-export function deleteProjectCredential(token: string, projectCredentialId: number) {
-  return apiRequest<void>(
-    `/api/v1/workbench/library/project-credentials/${projectCredentialId}`,
-    {
-      method: "DELETE",
-    },
-    token,
-  );
-}
 
 export function listDecompositionRuns(token: string, projectId?: number) {
   const params = new URLSearchParams();

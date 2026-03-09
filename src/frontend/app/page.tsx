@@ -7,21 +7,16 @@ import {
   ApiError,
   approveGenerationOutline,
   createDecompositionRun,
-  createEquipmentAsset,
   createGenerationJob,
   createKnowledgeBaseEntry,
   createLayoutJob,
-  createPersonnelAsset,
   createProject,
-  createProjectCredential,
-  createQualification,
   createReviewRun,
   confirmReviewRunPass,
   createSubmissionRecord,
   downloadDocumentArtifact,
   DecompositionRun,
   DocumentRecord,
-  EquipmentAsset,
   GenerationJob,
   getRuntimeSettings,
   HistoricalBid,
@@ -61,18 +56,7 @@ import {
   rebuildHistoricalReuseUnits,
   EvidenceSearchResult,
   EvidenceUnit,
-  listEquipmentAssets,
-  listPersonnelAssets,
-  listProjectCredentials,
-  listQualifications,
-  ProjectCredential,
-  Qualification,
-  deleteEquipmentAsset,
-  deletePersonnelAsset,
-  deleteProjectCredential,
-  deleteQualification,
   feedSubmissionRecordToLibrary,
-  PersonnelAsset,
   GeneratedSection,
   listGeneratedSections,
   downloadRenderedOutput,
@@ -236,10 +220,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [selectedLayoutJobId, setSelectedLayoutJobId] = useState<number | null>(null);
   const [renderedOutputs, setRenderedOutputs] = useState<RenderedOutput[]>([]);
   const [submissionRecords, setSubmissionRecords] = useState<SubmissionRecord[]>([]);
-  const [qualifications, setQualifications] = useState<Qualification[]>([]);
-  const [personnelAssets, setPersonnelAssets] = useState<PersonnelAsset[]>([]);
-  const [equipmentAssets, setEquipmentAssets] = useState<EquipmentAsset[]>([]);
-  const [projectCredentials, setProjectCredentials] = useState<ProjectCredential[]>([]);
   const [libraryCategory, setLibraryCategory] = useState("excellent_bid");
   const [libraryTitle, setLibraryTitle] = useState("2026 输变电优秀标书");
   const [libraryOwnerName, setLibraryOwnerName] = useState("市场经营中心");
@@ -247,19 +227,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [libraryFilterQuery, setLibraryFilterQuery] = useState("");
   const [libraryCreatedFrom, setLibraryCreatedFrom] = useState("");
   const [libraryCreatedTo, setLibraryCreatedTo] = useState("");
-  const [qualificationName, setQualificationName] = useState("电力工程施工总承包");
-  const [qualificationLevel, setQualificationLevel] = useState("一级");
-  const [qualificationCertificateNo, setQualificationCertificateNo] = useState("");
-  const [qualificationValidUntil, setQualificationValidUntil] = useState("");
-  const [personnelName, setPersonnelName] = useState("张三");
-  const [personnelRoleTitle, setPersonnelRoleTitle] = useState("项目经理");
-  const [personnelCertificateNo, setPersonnelCertificateNo] = useState("");
-  const [equipmentName, setEquipmentName] = useState("发电车");
-  const [equipmentModelNo, setEquipmentModelNo] = useState("");
-  const [equipmentQuantity, setEquipmentQuantity] = useState("1");
-  const [credentialProjectName, setCredentialProjectName] = useState("浙江示范工程");
-  const [credentialType, setCredentialType] = useState("project_performance");
-  const [credentialOwnerName, setCredentialOwnerName] = useState("市场经营中心");
   const [decompositionRunName, setDecompositionRunName] = useState("招标文件七类拆解");
   const [generationJobName, setGenerationJobName] = useState("技术标初稿生成");
   const [generationTargetSections, setGenerationTargetSections] = useState("7");
@@ -300,13 +267,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotDraft, setCopilotDraft] = useState("");
-  const [copilotMessages, setCopilotMessages] = useState<CopilotMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      text: "我是 Copilot。默认保持隐藏，需要时我可以解释当前模块、帮你导航，或提示下一步操作。",
-    },
-  ]);
+  const [copilotMessages, setCopilotMessages] = useState<CopilotMessage[]>([]);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -496,10 +457,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   useEffect(() => {
     if (!token) {
       setKnowledgeBaseEntries([]);
-      setQualifications([]);
-      setPersonnelAssets([]);
-      setEquipmentAssets([]);
-      setProjectCredentials([]);
       setDecompositionRuns([]);
       setGenerationJobs([]);
       setSelectedGenerationJobId(null);
@@ -675,10 +632,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     try {
       const [
         libraryRows,
-        qualificationRows,
-        personnelRows,
-        equipmentRows,
-        credentialRows,
         decompositionRows,
         generationRows,
         reviewRows,
@@ -686,10 +639,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         submissionRows,
       ] = await Promise.all([
         listKnowledgeBaseEntries(activeToken, projectId, libraryFilters),
-        listQualifications(activeToken),
-        listPersonnelAssets(activeToken),
-        listEquipmentAssets(activeToken),
-        listProjectCredentials(activeToken),
         listDecompositionRuns(activeToken, projectId),
         listGenerationJobs(activeToken, projectId),
         listReviewRuns(activeToken, projectId),
@@ -697,10 +646,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         listSubmissionRecords(activeToken, projectId, submissionFilters),
       ]);
       setKnowledgeBaseEntries(libraryRows);
-      setQualifications(qualificationRows);
-      setPersonnelAssets(personnelRows);
-      setEquipmentAssets(equipmentRows);
-      setProjectCredentials(credentialRows);
       setDecompositionRuns(decompositionRows);
       setGenerationJobs(generationRows);
       setReviewRuns(reviewRows);
@@ -903,160 +848,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       setLibraryCreatedTo("");
       await refreshWorkbench(token, selectedProjectId ?? undefined, {});
       setMessage("已重置资料台账筛选条件。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateQualification(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !qualificationName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在登记公司资质");
-      await createQualification(token, {
-        qualification_name: qualificationName.trim(),
-        qualification_level: qualificationLevel.trim(),
-        certificate_no: qualificationCertificateNo.trim(),
-        valid_until: qualificationValidUntil.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setQualificationCertificateNo("");
-      setQualificationValidUntil("");
-      setMessage("公司资质已加入资料库。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleDeleteQualification(qualificationId: number) {
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在删除公司资质");
-      await deleteQualification(token, qualificationId);
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setMessage(`公司资质 ${qualificationId} 已删除。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreatePersonnelAsset(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !personnelName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在登记人员资质");
-      await createPersonnelAsset(token, {
-        full_name: personnelName.trim(),
-        role_title: personnelRoleTitle.trim(),
-        certificate_no: personnelCertificateNo.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setPersonnelCertificateNo("");
-      setMessage("人员资质已加入资料库。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleDeletePersonnelAsset(personnelAssetId: number) {
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在删除人员资质");
-      await deletePersonnelAsset(token, personnelAssetId);
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setMessage(`人员资质 ${personnelAssetId} 已删除。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateEquipmentAsset(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !equipmentName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在登记设施设备");
-      await createEquipmentAsset(token, {
-        equipment_name: equipmentName.trim(),
-        model_no: equipmentModelNo.trim(),
-        quantity: Number(equipmentQuantity) || 0,
-      });
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setEquipmentModelNo("");
-      setEquipmentQuantity("1");
-      setMessage("设施设备已加入资料库。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleDeleteEquipmentAsset(equipmentAssetId: number) {
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在删除设施设备");
-      await deleteEquipmentAsset(token, equipmentAssetId);
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setMessage(`设施设备 ${equipmentAssetId} 已删除。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateProjectCredential(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !credentialProjectName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在登记项目业绩");
-      await createProjectCredential(token, {
-        project_name: credentialProjectName.trim(),
-        credential_type: credentialType.trim(),
-        owner_name: credentialOwnerName.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setMessage("项目业绩已加入资料库。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleDeleteProjectCredential(projectCredentialId: number) {
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在删除项目业绩");
-      await deleteProjectCredential(token, projectCredentialId);
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setMessage(`项目业绩 ${projectCredentialId} 已删除。`);
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1561,58 +1352,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     appendCopilotMessage("assistant", buildCopilotReply(prompt));
   }
 
-  function handleCopilotQuickAction(actionId: string) {
-    setCopilotOpen(true);
-    switch (actionId) {
-      case "go-home":
-        activateModule("home");
-        appendCopilotMessage("assistant", "已回到首页。你可以从资料准备开始，或继续上次停下的步骤。");
-        break;
-      case "go-knowledge-library":
-        activateModule("knowledge-library");
-        appendCopilotMessage("assistant", "已切换到「资料准备」。你可以上传招标文件，并补齐资质、人员、设备和业绩资料。");
-        break;
-      case "go-tender-analysis":
-        activateModule("tender-analysis");
-        appendCopilotMessage("assistant", "已切换到「招标分析」。这里可以继续拆解招标文件并核对原文条款。");
-        break;
-      case "go-bid-generation":
-        activateModule("bid-generation");
-        appendCopilotMessage("assistant", "已切换到「内容编写」。建议先确认章节框架，再继续补全章节草稿。");
-        break;
-      case "go-bid-review":
-        activateModule("bid-review");
-        appendCopilotMessage("assistant", "已切换到「校核定稿」。这里可以继续检查评分风险和废标隐患。");
-        break;
-      case "go-layout-finalize":
-        activateModule("layout-finalize");
-        appendCopilotMessage("assistant", "已切换到「排版导出」。可以继续核对版式，并导出最终送审文件。");
-        break;
-      case "go-bid-management":
-        activateModule("bid-management");
-        appendCopilotMessage("assistant", "已切换到「项目归档」。可以登记结果、归档成果，并回灌优质资料。");
-        break;
-      case "open-settings":
-        setSettingsOpen(true);
-        appendCopilotMessage("assistant", "已打开设置。这里可以检查模型服务是否可用，并调整默认模型。");
-        break;
-      default:
-        appendCopilotMessage("assistant", "我已记录你的意图。你可以继续问我要做什么，或者直接点模块切换。");
-        break;
-    }
-  }
-
-  const copilotQuickActions = [
-    { id: "go-home", label: "回到首页" },
-    { id: "go-knowledge-library", label: "资料准备" },
-    { id: "go-tender-analysis", label: "招标分析" },
-    { id: "go-bid-generation", label: "内容编写" },
-    { id: "go-bid-review", label: "校核定稿" },
-    { id: "go-layout-finalize", label: "排版导出" },
-    { id: "go-bid-management", label: "项目归档" },
-    { id: "open-settings", label: "打开设置" },
-  ];
-
   function renderHomeWorkspace() {
     const nextResumeModule = resumeModule ?? DEFAULT_RESUME_MODULE;
     const nextResumeModuleMeta =
@@ -1767,29 +1506,14 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         return (
           <KnowledgeLibraryView
             busyLabel={busyLabel}
-            credentialOwnerName={credentialOwnerName}
-            credentialProjectName={credentialProjectName}
-            credentialType={credentialType}
             documentEvidenceUnits={documentEvidenceUnits}
             documents={documents}
-            equipmentAssets={equipmentAssets}
-            equipmentModelNo={equipmentModelNo}
-            equipmentName={equipmentName}
-            equipmentQuantity={equipmentQuantity}
             evidenceDocumentType={evidenceDocumentType}
             evidenceQuery={evidenceQuery}
             evidenceResults={evidenceResults}
             handleApplyLibraryFilters={handleApplyLibraryFilters}
-            handleCreateEquipmentAsset={handleCreateEquipmentAsset}
             handleCreateLibraryEntry={handleCreateLibraryEntry}
-            handleCreatePersonnelAsset={handleCreatePersonnelAsset}
             handleCreateProject={handleCreateProject}
-            handleCreateProjectCredential={handleCreateProjectCredential}
-            handleCreateQualification={handleCreateQualification}
-            handleDeleteEquipmentAsset={handleDeleteEquipmentAsset}
-            handleDeletePersonnelAsset={handleDeletePersonnelAsset}
-            handleDeleteProjectCredential={handleDeleteProjectCredential}
-            handleDeleteQualification={handleDeleteQualification}
             handleImportHistoricalBid={handleImportHistoricalBid}
             handleLoadEvidenceUnits={handleLoadEvidenceUnits}
             handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
@@ -1826,18 +1550,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             message={message}
             onActivateModule={(module) => setActiveModule(module)}
             onOpenCopilot={() => setCopilotOpen(true)}
-            personnelAssets={personnelAssets}
-            personnelCertificateNo={personnelCertificateNo}
-            personnelName={personnelName}
-            personnelRoleTitle={personnelRoleTitle}
-            projectCredentials={projectCredentials}
             projectName={projectName}
             projects={projects}
-            qualifications={qualifications}
-            qualificationCertificateNo={qualificationCertificateNo}
-            qualificationLevel={qualificationLevel}
-            qualificationName={qualificationName}
-            qualificationValidUntil={qualificationValidUntil}
             reusePack={reusePack}
             reuseSectionType={reuseSectionType}
             selectedDocument={selectedDocument}
@@ -1845,12 +1559,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             selectedHistoricalBid={selectedHistoricalBid}
             selectedProject={selectedProject}
             selectedProjectId={selectedProjectId}
-            setCredentialOwnerName={setCredentialOwnerName}
-            setCredentialProjectName={setCredentialProjectName}
-            setCredentialType={setCredentialType}
-            setEquipmentModelNo={setEquipmentModelNo}
-            setEquipmentName={setEquipmentName}
-            setEquipmentQuantity={setEquipmentQuantity}
             setEvidenceDocumentType={setEvidenceDocumentType}
             setEvidenceQuery={setEvidenceQuery}
             setHistoricalProjectType={setHistoricalProjectType}
@@ -1870,14 +1578,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             setLibraryFilterQuery={setLibraryFilterQuery}
             setLibraryOwnerName={setLibraryOwnerName}
             setLibraryTitle={setLibraryTitle}
-            setPersonnelCertificateNo={setPersonnelCertificateNo}
-            setPersonnelName={setPersonnelName}
-            setPersonnelRoleTitle={setPersonnelRoleTitle}
             setProjectName={setProjectName}
-            setQualificationCertificateNo={setQualificationCertificateNo}
-            setQualificationLevel={setQualificationLevel}
-            setQualificationName={setQualificationName}
-            setQualificationValidUntil={setQualificationValidUntil}
             setReuseSectionType={setReuseSectionType}
             setSelectedHistoricalBidId={setSelectedHistoricalBidId}
             setUploadFile={setUploadFile}
@@ -1993,29 +1694,14 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         return (
           <KnowledgeLibraryView
             busyLabel={busyLabel}
-            credentialOwnerName={credentialOwnerName}
-            credentialProjectName={credentialProjectName}
-            credentialType={credentialType}
             documentEvidenceUnits={documentEvidenceUnits}
             documents={documents}
-            equipmentAssets={equipmentAssets}
-            equipmentModelNo={equipmentModelNo}
-            equipmentName={equipmentName}
-            equipmentQuantity={equipmentQuantity}
             evidenceDocumentType={evidenceDocumentType}
             evidenceQuery={evidenceQuery}
             evidenceResults={evidenceResults}
             handleApplyLibraryFilters={handleApplyLibraryFilters}
-            handleCreateEquipmentAsset={handleCreateEquipmentAsset}
             handleCreateLibraryEntry={handleCreateLibraryEntry}
-            handleCreatePersonnelAsset={handleCreatePersonnelAsset}
             handleCreateProject={handleCreateProject}
-            handleCreateProjectCredential={handleCreateProjectCredential}
-            handleCreateQualification={handleCreateQualification}
-            handleDeleteEquipmentAsset={handleDeleteEquipmentAsset}
-            handleDeletePersonnelAsset={handleDeletePersonnelAsset}
-            handleDeleteProjectCredential={handleDeleteProjectCredential}
-            handleDeleteQualification={handleDeleteQualification}
             handleImportHistoricalBid={handleImportHistoricalBid}
             handleLoadEvidenceUnits={handleLoadEvidenceUnits}
             handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
@@ -2052,18 +1738,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             message={message}
             onActivateModule={(module) => setActiveModule(module)}
             onOpenCopilot={() => setCopilotOpen(true)}
-            personnelAssets={personnelAssets}
-            personnelCertificateNo={personnelCertificateNo}
-            personnelName={personnelName}
-            personnelRoleTitle={personnelRoleTitle}
-            projectCredentials={projectCredentials}
             projectName={projectName}
             projects={projects}
-            qualifications={qualifications}
-            qualificationCertificateNo={qualificationCertificateNo}
-            qualificationLevel={qualificationLevel}
-            qualificationName={qualificationName}
-            qualificationValidUntil={qualificationValidUntil}
             reusePack={reusePack}
             reuseSectionType={reuseSectionType}
             selectedDocument={selectedDocument}
@@ -2071,12 +1747,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             selectedHistoricalBid={selectedHistoricalBid}
             selectedProject={selectedProject}
             selectedProjectId={selectedProjectId}
-            setCredentialOwnerName={setCredentialOwnerName}
-            setCredentialProjectName={setCredentialProjectName}
-            setCredentialType={setCredentialType}
-            setEquipmentModelNo={setEquipmentModelNo}
-            setEquipmentName={setEquipmentName}
-            setEquipmentQuantity={setEquipmentQuantity}
             setEvidenceDocumentType={setEvidenceDocumentType}
             setEvidenceQuery={setEvidenceQuery}
             setHistoricalProjectType={setHistoricalProjectType}
@@ -2096,14 +1766,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             setLibraryFilterQuery={setLibraryFilterQuery}
             setLibraryOwnerName={setLibraryOwnerName}
             setLibraryTitle={setLibraryTitle}
-            setPersonnelCertificateNo={setPersonnelCertificateNo}
-            setPersonnelName={setPersonnelName}
-            setPersonnelRoleTitle={setPersonnelRoleTitle}
             setProjectName={setProjectName}
-            setQualificationCertificateNo={setQualificationCertificateNo}
-            setQualificationLevel={setQualificationLevel}
-            setQualificationName={setQualificationName}
-            setQualificationValidUntil={setQualificationValidUntil}
             setReuseSectionType={setReuseSectionType}
             setSelectedHistoricalBidId={setSelectedHistoricalBidId}
             setUploadFile={setUploadFile}
@@ -2190,14 +1853,10 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       <CopilotPanel
         draft={copilotDraft}
         messages={copilotMessages}
-        moduleLabel={activeModuleMeta.label}
         onClose={() => setCopilotOpen(false)}
         onDraftChange={setCopilotDraft}
-        onQuickAction={handleCopilotQuickAction}
         onSubmit={handleCopilotSubmit}
         open={copilotOpen}
-        projectName={selectedProject?.name ?? null}
-        quickActions={copilotQuickActions}
       />
 
       {!copilotOpen ? <CopilotTrigger onClick={() => setCopilotOpen(true)} /> : null}

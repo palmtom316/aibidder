@@ -2,7 +2,6 @@ import { ModuleIntro } from "./module-intro";
 import { KnowledgeLibraryV2Panel } from "./knowledge-library-v2-panel";
 import type {
   DocumentRecord,
-  EquipmentAsset,
   EvidenceSearchResult,
   EvidenceUnit,
   HistoricalBid,
@@ -10,13 +9,10 @@ import type {
   HistoricalReusePack,
   HistoricalReuseUnit,
   KnowledgeBaseEntry,
-  PersonnelAsset,
   Project,
-  ProjectCredential,
-  Qualification,
 } from "../../lib/api";
 import type { FormSubmitHandler, NumberAction, StateSetter, VoidAction } from "./shared";
-import { formatCredentialType, formatDate, formatDocumentType, formatJobStatus, formatLibraryCategory, formatProjectType, formatRiskLevel } from "./utils";
+import { formatDate, formatDocumentType, formatJobStatus, formatLibraryCategory, formatProjectType, formatRiskLevel } from "./utils";
 
 type KnowledgeLibraryViewProps = {
   projects: Project[];
@@ -28,10 +24,6 @@ type KnowledgeLibraryViewProps = {
   selectedDocumentId: number | null;
   selectedHistoricalBid: HistoricalBid | null;
   knowledgeBaseEntries: KnowledgeBaseEntry[];
-  qualifications: Qualification[];
-  personnelAssets: PersonnelAsset[];
-  equipmentAssets: EquipmentAsset[];
-  projectCredentials: ProjectCredential[];
   evidenceResults: EvidenceSearchResult[];
   documentEvidenceUnits: EvidenceUnit[];
   historicalSections: HistoricalBidSection[];
@@ -86,19 +78,6 @@ type KnowledgeLibraryViewProps = {
   setLibraryFilterQuery: StateSetter<string>;
   setLibraryCreatedFrom: StateSetter<string>;
   setLibraryCreatedTo: StateSetter<string>;
-  setQualificationName: StateSetter<string>;
-  setQualificationLevel: StateSetter<string>;
-  setQualificationCertificateNo: StateSetter<string>;
-  setQualificationValidUntil: StateSetter<string>;
-  setPersonnelName: StateSetter<string>;
-  setPersonnelRoleTitle: StateSetter<string>;
-  setPersonnelCertificateNo: StateSetter<string>;
-  setEquipmentName: StateSetter<string>;
-  setEquipmentModelNo: StateSetter<string>;
-  setEquipmentQuantity: StateSetter<string>;
-  setCredentialProjectName: StateSetter<string>;
-  setCredentialType: StateSetter<string>;
-  setCredentialOwnerName: StateSetter<string>;
   setEvidenceQuery: StateSetter<string>;
   setEvidenceDocumentType: StateSetter<string>;
   setImportDocumentId: StateSetter<number | null>;
@@ -122,14 +101,6 @@ type KnowledgeLibraryViewProps = {
   handleApplyLibraryFilters: FormSubmitHandler;
   handleResetLibraryFilters: VoidAction;
   handleRunLibraryCheck: NumberAction;
-  handleCreateQualification: FormSubmitHandler;
-  handleDeleteQualification: NumberAction;
-  handleCreatePersonnelAsset: FormSubmitHandler;
-  handleDeletePersonnelAsset: NumberAction;
-  handleCreateEquipmentAsset: FormSubmitHandler;
-  handleDeleteEquipmentAsset: NumberAction;
-  handleCreateProjectCredential: FormSubmitHandler;
-  handleDeleteProjectCredential: NumberAction;
   handleSearchEvidence: FormSubmitHandler;
   handleImportHistoricalBid: FormSubmitHandler;
   handleLoadHistoricalArtifacts: VoidAction;
@@ -149,10 +120,6 @@ export function KnowledgeLibraryView({
   selectedDocumentId,
   selectedHistoricalBid,
   knowledgeBaseEntries,
-  qualifications,
-  personnelAssets,
-  equipmentAssets,
-  projectCredentials,
   evidenceResults,
   documentEvidenceUnits,
   historicalSections,
@@ -207,19 +174,6 @@ export function KnowledgeLibraryView({
   setLibraryFilterQuery,
   setLibraryCreatedFrom,
   setLibraryCreatedTo,
-  setQualificationName,
-  setQualificationLevel,
-  setQualificationCertificateNo,
-  setQualificationValidUntil,
-  setPersonnelName,
-  setPersonnelRoleTitle,
-  setPersonnelCertificateNo,
-  setEquipmentName,
-  setEquipmentModelNo,
-  setEquipmentQuantity,
-  setCredentialProjectName,
-  setCredentialType,
-  setCredentialOwnerName,
   setEvidenceQuery,
   setEvidenceDocumentType,
   setImportDocumentId,
@@ -243,14 +197,6 @@ export function KnowledgeLibraryView({
   handleApplyLibraryFilters,
   handleResetLibraryFilters,
   handleRunLibraryCheck,
-  handleCreateQualification,
-  handleDeleteQualification,
-  handleCreatePersonnelAsset,
-  handleDeletePersonnelAsset,
-  handleCreateEquipmentAsset,
-  handleDeleteEquipmentAsset,
-  handleCreateProjectCredential,
-  handleDeleteProjectCredential,
   handleSearchEvidence,
   handleImportHistoricalBid,
   handleLoadHistoricalArtifacts,
@@ -338,7 +284,9 @@ export function KnowledgeLibraryView({
       <section className="workspace-stack">
         <KnowledgeLibraryV2Panel token={token} selectedProjectId={selectedProjectId} documents={documents} />
       </section>
-      <section className="workspace-stack">
+      <details className="surface-card">
+        <summary>兼容入口（旧版资料台账与历史样本）</summary>
+        <section className="workspace-stack">
         <div className="workspace-grid workspace-grid-3">
           <section className="surface-card">
             <div className="panel-header">
@@ -513,163 +461,6 @@ export function KnowledgeLibraryView({
           </section>
         </div>
 
-        <div className="workspace-grid workspace-grid-2">
-          <form className="surface-card stack" onSubmit={handleCreateQualification}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>公司资质</h3>
-              </div>
-              <span className="badge">{qualifications.length}</span>
-            </div>
-            <label>
-              资质名称
-              <input value={qualificationName} onChange={(event) => setQualificationName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                资质等级
-                <input value={qualificationLevel} onChange={(event) => setQualificationLevel(event.target.value)} />
-              </label>
-              <label>
-                证书编号
-                <input value={qualificationCertificateNo} onChange={(event) => setQualificationCertificateNo(event.target.value)} />
-              </label>
-            </div>
-            <label>
-              有效期
-              <input value={qualificationValidUntil} onChange={(event) => setQualificationValidUntil(event.target.value)} placeholder="例如 2028-12-31" />
-            </label>
-            <button className="primary-button" disabled={!token || !qualificationName.trim() || Boolean(busyLabel)} type="submit">
-              新增公司资质
-            </button>
-            <div className="mini-list">
-              {qualifications.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.qualification_name}</strong>
-                    <span>{row.qualification_level || "未分级"} · {row.certificate_no || "无证书号"}</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeleteQualification(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <form className="surface-card stack" onSubmit={handleCreatePersonnelAsset}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>人员资质</h3>
-              </div>
-              <span className="badge">{personnelAssets.length}</span>
-            </div>
-            <label>
-              人员姓名
-              <input value={personnelName} onChange={(event) => setPersonnelName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                角色
-                <input value={personnelRoleTitle} onChange={(event) => setPersonnelRoleTitle(event.target.value)} />
-              </label>
-              <label>
-                证书编号
-                <input value={personnelCertificateNo} onChange={(event) => setPersonnelCertificateNo(event.target.value)} />
-              </label>
-            </div>
-            <button className="primary-button" disabled={!token || !personnelName.trim() || Boolean(busyLabel)} type="submit">
-              新增人员资质
-            </button>
-            <div className="mini-list">
-              {personnelAssets.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.full_name}</strong>
-                    <span>{row.role_title || "未设角色"} · {row.certificate_no || "无证书号"}</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeletePersonnelAsset(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <form className="surface-card stack" onSubmit={handleCreateEquipmentAsset}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>设施设备</h3>
-              </div>
-              <span className="badge">{equipmentAssets.length}</span>
-            </div>
-            <label>
-              设备名称
-              <input value={equipmentName} onChange={(event) => setEquipmentName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                型号
-                <input value={equipmentModelNo} onChange={(event) => setEquipmentModelNo(event.target.value)} />
-              </label>
-              <label>
-                数量
-                <input value={equipmentQuantity} onChange={(event) => setEquipmentQuantity(event.target.value)} inputMode="numeric" />
-              </label>
-            </div>
-            <button className="primary-button" disabled={!token || !equipmentName.trim() || Boolean(busyLabel)} type="submit">
-              新增设施设备
-            </button>
-            <div className="mini-list">
-              {equipmentAssets.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.equipment_name}</strong>
-                    <span>{row.model_no || "未设型号"} · {row.quantity} 台</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeleteEquipmentAsset(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-
-          <form className="surface-card stack" onSubmit={handleCreateProjectCredential}>
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">企业事实表</p>
-                <h3>项目业绩</h3>
-              </div>
-              <span className="badge">{projectCredentials.length}</span>
-            </div>
-            <label>
-              项目名称
-              <input value={credentialProjectName} onChange={(event) => setCredentialProjectName(event.target.value)} />
-            </label>
-            <div className="two-column">
-              <label>
-                业绩类型
-                <input value={credentialType} onChange={(event) => setCredentialType(event.target.value)} />
-              </label>
-              <label>
-                归口部门
-                <input value={credentialOwnerName} onChange={(event) => setCredentialOwnerName(event.target.value)} />
-              </label>
-            </div>
-            <button className="primary-button" disabled={!token || !credentialProjectName.trim() || Boolean(busyLabel)} type="submit">
-              新增项目业绩
-            </button>
-            <div className="mini-list">
-              {projectCredentials.map((row) => (
-                <div className="mini-item" key={row.id}>
-                  <div>
-                    <strong>{row.project_name}</strong>
-                    <span>{formatCredentialType(row.credential_type)} · {row.owner_name || "未指定部门"}</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => void handleDeleteProjectCredential(row.id)} type="button">删除</button>
-                </div>
-              ))}
-            </div>
-          </form>
-        </div>
       </section>
 
       <section className="workspace-stack">
@@ -960,7 +751,8 @@ export function KnowledgeLibraryView({
             </div>
           </section>
         </div>
-      </section>
+        </section>
+      </details>
     </>
   );
 }

@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
@@ -20,14 +20,10 @@ from app.core.storage import (
 )
 from app.api.pagination import slice_results
 from app.db.models import (
-    CompanyAssetProfile,
-    CompanyPerformanceProfile,
-    CompanyQualificationProfile,
     DecompositionRun,
     Document,
     DocumentArtifact,
     DocumentVersion,
-    EquipmentAsset,
     GeneratedSection,
     GenerationJob,
     KnowledgeBaseEntry,
@@ -37,13 +33,8 @@ from app.db.models import (
     LibraryRecordVersion,
     LibraryReview,
     LayoutJob,
-    PersonnelAsset,
-    PersonnelPerformanceProfile,
-    PersonnelQualificationProfile,
     Project,
-    ProjectCredential,
     ProjectMember,
-    Qualification,
     RenderedOutput,
     ReviewIssue,
     VerificationIssue,
@@ -57,9 +48,6 @@ from app.schemas.workbench import (
     CompanyPerformanceRecordCreate,
     CompanyQualificationRecordCreate,
     DecompositionRunResponse,
-    EquipmentAssetCreate,
-    EquipmentAssetResponse,
-    EquipmentAssetUpdate,
     GeneratedSectionResponse,
     GenerationJobCreate,
     GenerationJobResponse,
@@ -77,18 +65,9 @@ from app.schemas.workbench import (
     LayoutJobCreate,
     LayoutJobResponse,
     ModuleSummary,
-    PersonnelAssetCreate,
-    PersonnelAssetResponse,
-    PersonnelAssetUpdate,
     PersonnelPerformanceRecordCreate,
     PersonnelQualificationRecordCreate,
     PipelineRunCreate,
-    ProjectCredentialCreate,
-    ProjectCredentialResponse,
-    ProjectCredentialUpdate,
-    QualificationCreate,
-    QualificationResponse,
-    QualificationUpdate,
     RenderedOutputResponse,
     ReviewIssueResponse,
     VerificationIssueResponse,
@@ -1019,378 +998,6 @@ def download_library_attachment(
     if attachment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library attachment not found")
     return build_download_response(attachment.storage_path, filename=attachment.filename)
-
-
-def _list_library_records(db: Session, current_user: UserIdentity, model: type) -> list:
-    stmt = (
-        select(model)
-        .where(model.organization_id == current_user.organization_id)
-        .order_by(model.created_at.desc(), model.id.desc())
-    )
-    return list(db.scalars(stmt))
-
-
-def _get_library_record_or_404(db: Session, current_user: UserIdentity, model: type, record_id: int, detail: str):
-    record = db.scalar(
-        select(model).where(
-            model.id == record_id,
-            model.organization_id == current_user.organization_id,
-        )
-    )
-    if record is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
-    return record
-
-
-def _create_library_record(
-    *,
-    db: Session,
-    current_user: UserIdentity,
-    request: Request,
-    model: type,
-    resource_type: str,
-    action: str,
-    values: dict,
-):
-    record = model(
-        organization_id=current_user.organization_id,
-        **values,
-    )
-    db.add(record)
-    db.flush()
-    write_audit_log(
-        db,
-        action=action,
-        organization_id=current_user.organization_id,
-        user_id=current_user.id,
-        resource_type=resource_type,
-        resource_id=record.id,
-        request_id=getattr(request.state, "request_id", ""),
-        detail=values,
-    )
-    db.commit()
-    db.refresh(record)
-    return record
-
-
-def _update_library_record(
-    *,
-    db: Session,
-    current_user: UserIdentity,
-    request: Request,
-    model: type,
-    record_id: int,
-    resource_type: str,
-    action: str,
-    detail: str,
-    values: dict,
-):
-    record = _get_library_record_or_404(db, current_user, model, record_id, detail)
-    for field, value in values.items():
-        setattr(record, field, value)
-    write_audit_log(
-        db,
-        action=action,
-        organization_id=current_user.organization_id,
-        user_id=current_user.id,
-        resource_type=resource_type,
-        resource_id=record.id,
-        request_id=getattr(request.state, "request_id", ""),
-        detail=values,
-    )
-    db.commit()
-    db.refresh(record)
-    return record
-
-
-def _delete_library_record(
-    *,
-    db: Session,
-    current_user: UserIdentity,
-    request: Request,
-    model: type,
-    record_id: int,
-    resource_type: str,
-    action: str,
-    detail: str,
-) -> None:
-    record = _get_library_record_or_404(db, current_user, model, record_id, detail)
-    write_audit_log(
-        db,
-        action=action,
-        organization_id=current_user.organization_id,
-        user_id=current_user.id,
-        resource_type=resource_type,
-        resource_id=record.id,
-        request_id=getattr(request.state, "request_id", ""),
-        detail={"deleted": True},
-    )
-    db.delete(record)
-    db.commit()
-
-
-@router.get("/library/qualifications", response_model=list[QualificationResponse])
-def list_qualifications(
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> list[Qualification]:
-    return _list_library_records(db, current_user, Qualification)
-
-
-@router.post("/library/qualifications", response_model=QualificationResponse, status_code=status.HTTP_201_CREATED)
-def create_qualification(
-    payload: QualificationCreate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> Qualification:
-    return _create_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=Qualification,
-        resource_type="qualification",
-        action="workbench.library.qualification.create",
-        values=payload.model_dump(),
-    )
-
-
-@router.patch("/library/qualifications/{qualification_id}", response_model=QualificationResponse)
-def update_qualification(
-    qualification_id: int,
-    payload: QualificationUpdate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> Qualification:
-    return _update_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=Qualification,
-        record_id=qualification_id,
-        resource_type="qualification",
-        action="workbench.library.qualification.update",
-        detail="Qualification not found",
-        values=payload.model_dump(exclude_unset=True),
-    )
-
-
-@router.delete("/library/qualifications/{qualification_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_qualification(
-    qualification_id: int,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> None:
-    _delete_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=Qualification,
-        record_id=qualification_id,
-        resource_type="qualification",
-        action="workbench.library.qualification.delete",
-        detail="Qualification not found",
-    )
-
-
-@router.get("/library/personnel-assets", response_model=list[PersonnelAssetResponse])
-def list_personnel_assets(
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> list[PersonnelAsset]:
-    return _list_library_records(db, current_user, PersonnelAsset)
-
-
-@router.post("/library/personnel-assets", response_model=PersonnelAssetResponse, status_code=status.HTTP_201_CREATED)
-def create_personnel_asset(
-    payload: PersonnelAssetCreate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> PersonnelAsset:
-    return _create_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=PersonnelAsset,
-        resource_type="personnel_asset",
-        action="workbench.library.personnel_asset.create",
-        values=payload.model_dump(),
-    )
-
-
-@router.patch("/library/personnel-assets/{personnel_asset_id}", response_model=PersonnelAssetResponse)
-def update_personnel_asset(
-    personnel_asset_id: int,
-    payload: PersonnelAssetUpdate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> PersonnelAsset:
-    return _update_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=PersonnelAsset,
-        record_id=personnel_asset_id,
-        resource_type="personnel_asset",
-        action="workbench.library.personnel_asset.update",
-        detail="Personnel asset not found",
-        values=payload.model_dump(exclude_unset=True),
-    )
-
-
-@router.delete("/library/personnel-assets/{personnel_asset_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_personnel_asset(
-    personnel_asset_id: int,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> None:
-    _delete_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=PersonnelAsset,
-        record_id=personnel_asset_id,
-        resource_type="personnel_asset",
-        action="workbench.library.personnel_asset.delete",
-        detail="Personnel asset not found",
-    )
-
-
-@router.get("/library/equipment-assets", response_model=list[EquipmentAssetResponse])
-def list_equipment_assets(
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> list[EquipmentAsset]:
-    return _list_library_records(db, current_user, EquipmentAsset)
-
-
-@router.post("/library/equipment-assets", response_model=EquipmentAssetResponse, status_code=status.HTTP_201_CREATED)
-def create_equipment_asset(
-    payload: EquipmentAssetCreate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> EquipmentAsset:
-    return _create_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=EquipmentAsset,
-        resource_type="equipment_asset",
-        action="workbench.library.equipment_asset.create",
-        values=payload.model_dump(),
-    )
-
-
-@router.patch("/library/equipment-assets/{equipment_asset_id}", response_model=EquipmentAssetResponse)
-def update_equipment_asset(
-    equipment_asset_id: int,
-    payload: EquipmentAssetUpdate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> EquipmentAsset:
-    return _update_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=EquipmentAsset,
-        record_id=equipment_asset_id,
-        resource_type="equipment_asset",
-        action="workbench.library.equipment_asset.update",
-        detail="Equipment asset not found",
-        values=payload.model_dump(exclude_unset=True),
-    )
-
-
-@router.delete("/library/equipment-assets/{equipment_asset_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_equipment_asset(
-    equipment_asset_id: int,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> None:
-    _delete_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=EquipmentAsset,
-        record_id=equipment_asset_id,
-        resource_type="equipment_asset",
-        action="workbench.library.equipment_asset.delete",
-        detail="Equipment asset not found",
-    )
-
-
-@router.get("/library/project-credentials", response_model=list[ProjectCredentialResponse])
-def list_project_credentials(
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> list[ProjectCredential]:
-    return _list_library_records(db, current_user, ProjectCredential)
-
-
-@router.post("/library/project-credentials", response_model=ProjectCredentialResponse, status_code=status.HTTP_201_CREATED)
-def create_project_credential(
-    payload: ProjectCredentialCreate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> ProjectCredential:
-    return _create_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=ProjectCredential,
-        resource_type="project_credential",
-        action="workbench.library.project_credential.create",
-        values=payload.model_dump(),
-    )
-
-
-@router.patch("/library/project-credentials/{project_credential_id}", response_model=ProjectCredentialResponse)
-def update_project_credential(
-    project_credential_id: int,
-    payload: ProjectCredentialUpdate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> ProjectCredential:
-    return _update_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=ProjectCredential,
-        record_id=project_credential_id,
-        resource_type="project_credential",
-        action="workbench.library.project_credential.update",
-        detail="Project credential not found",
-        values=payload.model_dump(exclude_unset=True),
-    )
-
-
-@router.delete("/library/project-credentials/{project_credential_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project_credential(
-    project_credential_id: int,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> None:
-    _delete_library_record(
-        db=db,
-        current_user=current_user,
-        request=request,
-        model=ProjectCredential,
-        record_id=project_credential_id,
-        resource_type="project_credential",
-        action="workbench.library.project_credential.delete",
-        detail="Project credential not found",
-    )
 
 
 def _create_run_record(
