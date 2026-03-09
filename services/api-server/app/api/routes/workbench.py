@@ -26,7 +26,6 @@ from app.db.models import (
     DocumentVersion,
     GeneratedSection,
     GenerationJob,
-    KnowledgeBaseEntry,
     LibraryAttachment,
     LibraryChunk,
     LibraryRecord,
@@ -51,8 +50,6 @@ from app.schemas.workbench import (
     GeneratedSectionResponse,
     GenerationJobCreate,
     GenerationJobResponse,
-    KnowledgeBaseEntryCreate,
-    KnowledgeBaseEntryResponse,
     LibraryAttachmentResponse,
     LibraryChunkResponse,
     LibraryDocumentRecordCreate,
@@ -80,7 +77,7 @@ from app.schemas.workbench import (
 from app.services.audit_log import write_audit_log
 from app.services.generation_pipeline import execute_generation_job
 from app.services.document_ingestion_tasks import finalize_document_ingestion
-from app.services.knowledge_base_checks import run_knowledge_base_entry_check
+from app.services.library_historical_sync import sync_historical_bid_from_library_record
 from app.services.layout_pipeline import execute_layout_job
 from app.services.library_records import (
     LIBRARY_PROJECT_CATEGORIES,
@@ -210,7 +207,7 @@ def get_workbench_overview(
         _require_project_access(project_id, current_user, db)
 
     counts = {
-        "knowledge_library": _count_rows(db, KnowledgeBaseEntry, current_user.organization_id, project_id),
+        "knowledge_library": _count_rows(db, LibraryRecord, current_user.organization_id, project_id),
         "tender_decomposition": _count_rows(db, DecompositionRun, current_user.organization_id, project_id),
         "bid_generation": _count_rows(db, GenerationJob, current_user.organization_id, project_id),
         "bid_review": _count_rows(db, ReviewRun, current_user.organization_id, project_id),
@@ -236,128 +233,6 @@ def get_workbench_overview(
         )
     ]
     return WorkbenchOverviewResponse(project_id=project_id, modules=modules)
-
-
-@router.post("/library/entries", response_model=KnowledgeBaseEntryResponse, status_code=status.HTTP_201_CREATED)
-def create_library_entry(
-    payload: KnowledgeBaseEntryCreate,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> KnowledgeBaseEntry:
-    _ensure_project_and_document_access(
-        project_id=payload.project_id,
-        document_id=payload.source_document_id,
-        current_user=current_user,
-        db=db,
-    )
-
-    entry = KnowledgeBaseEntry(
-        organization_id=current_user.organization_id,
-        project_id=payload.project_id,
-        source_document_id=payload.source_document_id,
-        category=payload.category,
-        title=payload.title,
-        owner_name=payload.owner_name,
-        created_by_user_id=current_user.id,
-    )
-    db.add(entry)
-    db.flush()
-    if payload.source_document_id is not None:
-        source_document = db.scalar(select(Document).where(Document.id == payload.source_document_id))
-        if source_document is not None and source_document.document_type == "norm":
-            entry.detection_status, entry.detected_summary = run_knowledge_base_entry_check(db, entry)
-    write_audit_log(
-        db,
-        action="workbench.library.create",
-        organization_id=current_user.organization_id,
-        project_id=payload.project_id,
-        user_id=current_user.id,
-        resource_type="knowledge_base_entry",
-        resource_id=entry.id,
-        request_id=getattr(request.state, "request_id", ""),
-        detail={
-            "category": payload.category,
-            "title": payload.title,
-            "detection_status": entry.detection_status,
-        },
-    )
-    db.commit()
-    db.refresh(entry)
-    return entry
-
-
-@router.get("/library/entries", response_model=list[KnowledgeBaseEntryResponse])
-def list_library_entries(
-    project_id: int | None = None,
-    category: str | None = Query(None, min_length=1, max_length=64),
-    q: str | None = Query(None, min_length=1, max_length=255),
-    created_from: datetime | None = None,
-    created_to: datetime | None = None,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> list[KnowledgeBaseEntry]:
-    if project_id is not None:
-        _require_project_access(project_id, current_user, db)
-
-    if created_from is not None and created_to is not None and created_from > created_to:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="created_from must be <= created_to")
-
-    stmt = select(KnowledgeBaseEntry).where(KnowledgeBaseEntry.organization_id == current_user.organization_id)
-    if project_id is not None:
-        stmt = stmt.where(KnowledgeBaseEntry.project_id == project_id)
-    if category is not None:
-        stmt = stmt.where(KnowledgeBaseEntry.category == category)
-    if q is not None:
-        keyword = f"%{q.strip()}%"
-        stmt = stmt.where(
-            or_(
-                KnowledgeBaseEntry.title.ilike(keyword),
-                KnowledgeBaseEntry.owner_name.ilike(keyword),
-                KnowledgeBaseEntry.category.ilike(keyword),
-            )
-        )
-    if created_from is not None:
-        stmt = stmt.where(KnowledgeBaseEntry.created_at >= created_from)
-    if created_to is not None:
-        stmt = stmt.where(KnowledgeBaseEntry.created_at <= created_to)
-    stmt = stmt.order_by(KnowledgeBaseEntry.created_at.desc(), KnowledgeBaseEntry.id.desc())
-    return slice_results(list(db.scalars(stmt)), offset=offset, limit=limit)
-
-
-@router.post("/library/entries/{entry_id}/run-check", response_model=KnowledgeBaseEntryResponse)
-def run_library_entry_check(
-    entry_id: int,
-    request: Request,
-    current_user: UserIdentity = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> KnowledgeBaseEntry:
-    entry = db.scalar(
-        select(KnowledgeBaseEntry).where(
-            KnowledgeBaseEntry.id == entry_id,
-            KnowledgeBaseEntry.organization_id == current_user.organization_id,
-        )
-    )
-    if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base entry not found")
-
-    entry.detection_status, entry.detected_summary = run_knowledge_base_entry_check(db, entry)
-    write_audit_log(
-        db,
-        action="workbench.library.run_check",
-        organization_id=current_user.organization_id,
-        project_id=entry.project_id,
-        user_id=current_user.id,
-        resource_type="knowledge_base_entry",
-        resource_id=entry.id,
-        request_id=getattr(request.state, "request_id", ""),
-        detail={"detection_status": entry.detection_status},
-    )
-    db.commit()
-    db.refresh(entry)
-    return entry
 
 
 def _serialize_library_record_detail(db: Session, record: LibraryRecord) -> LibraryRecordDetailResponse:
@@ -458,6 +333,7 @@ def _build_library_record(
         review_notes="自动建档",
         diff_json=json.dumps({"created": True}, ensure_ascii=False),
     )
+    sync_historical_bid_from_library_record(db, record)
     write_audit_log(
         db,
         action=f"workbench.library.{record_type}.create",
@@ -885,6 +761,7 @@ def update_library_record_review(
     version = create_library_record_version(db, record=record, review_notes=changes.get("review_notes", ""))
     if record.record_type in {"historical_bid", "excellent_bid", "norm_spec"}:
         rebuild_chunks_for_record(db, record)
+    sync_historical_bid_from_library_record(db, record)
     diff_payload = {
         key: {"before": before.get(key), "after": getattr(record, key)}
         for key in before
@@ -1551,7 +1428,7 @@ def create_submission_record(
 
 @router.post(
     "/submission-records/{record_id}/feed-to-library",
-    response_model=KnowledgeBaseEntryResponse,
+    response_model=LibraryRecordResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def feed_submission_record_to_library(
@@ -1559,7 +1436,7 @@ def feed_submission_record_to_library(
     request: Request,
     current_user: UserIdentity = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> KnowledgeBaseEntry:
+) -> LibraryRecord:
     record = db.scalar(
         select(SubmissionRecord).where(
             SubmissionRecord.id == record_id,
@@ -1568,32 +1445,24 @@ def feed_submission_record_to_library(
     )
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Submission record not found")
-
-    entry = KnowledgeBaseEntry(
-        organization_id=current_user.organization_id,
+    record_type = "excellent_bid" if record.status == "won" else "historical_bid"
+    return _build_library_record(
+        db=db,
+        current_user=current_user,
+        request=request,
+        record_type=record_type,
+        title=record.title,
+        project_category="配网工程",
+        owner_name="标书管理",
         project_id=record.project_id,
         source_document_id=record.source_document_id,
-        category="excellent_bid" if record.status == "won" else "historical_bid",
-        title=record.title,
-        owner_name="标书管理",
-        created_by_user_id=current_user.id,
+        ingestion_mode="document_pipeline",
+        profile_json=json.dumps(
+            {"source_document_id": record.source_document_id, "record_type": record_type, "submission_record_id": record.id},
+            ensure_ascii=False,
+        ),
+        metadata_json=json.dumps({"submission_record_id": record.id}, ensure_ascii=False),
     )
-    db.add(entry)
-    db.flush()
-    write_audit_log(
-        db,
-        action="workbench.submission.feed_to_library",
-        organization_id=current_user.organization_id,
-        project_id=record.project_id,
-        user_id=current_user.id,
-        resource_type="knowledge_base_entry",
-        resource_id=entry.id,
-        request_id=getattr(request.state, "request_id", ""),
-        detail={"submission_record_id": record.id, "category": entry.category},
-    )
-    db.commit()
-    db.refresh(entry)
-    return entry
 
 
 @router.get("/submission-records", response_model=list[SubmissionRecordResponse])

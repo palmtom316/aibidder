@@ -8,11 +8,10 @@ import type {
   HistoricalBidSection,
   HistoricalReusePack,
   HistoricalReuseUnit,
-  KnowledgeBaseEntry,
   Project,
 } from "../../lib/api";
 import type { FormSubmitHandler, NumberAction, StateSetter, VoidAction } from "./shared";
-import { formatDate, formatDocumentType, formatJobStatus, formatLibraryCategory, formatProjectType, formatRiskLevel } from "./utils";
+import { formatDate, formatDocumentType, formatJobStatus, formatProjectType, formatRiskLevel } from "./utils";
 
 type KnowledgeLibraryViewProps = {
   projects: Project[];
@@ -23,7 +22,6 @@ type KnowledgeLibraryViewProps = {
   selectedDocument: DocumentRecord | null;
   selectedDocumentId: number | null;
   selectedHistoricalBid: HistoricalBid | null;
-  knowledgeBaseEntries: KnowledgeBaseEntry[];
   evidenceResults: EvidenceSearchResult[];
   documentEvidenceUnits: EvidenceUnit[];
   historicalSections: HistoricalBidSection[];
@@ -43,26 +41,6 @@ type KnowledgeLibraryViewProps = {
   leakageResult: { ok: boolean; matched_terms: string[] } | null;
   projectName: string;
   uploadType: string;
-  libraryCategory: string;
-  libraryTitle: string;
-  libraryOwnerName: string;
-  libraryFilterCategory: string;
-  libraryFilterQuery: string;
-  libraryCreatedFrom: string;
-  libraryCreatedTo: string;
-  qualificationName: string;
-  qualificationLevel: string;
-  qualificationCertificateNo: string;
-  qualificationValidUntil: string;
-  personnelName: string;
-  personnelRoleTitle: string;
-  personnelCertificateNo: string;
-  equipmentName: string;
-  equipmentModelNo: string;
-  equipmentQuantity: string;
-  credentialProjectName: string;
-  credentialType: string;
-  credentialOwnerName: string;
   evidenceQuery: string;
   evidenceDocumentType: string;
   token: string | null;
@@ -71,13 +49,6 @@ type KnowledgeLibraryViewProps = {
   setProjectName: StateSetter<string>;
   setUploadType: StateSetter<string>;
   setUploadFile: StateSetter<File | null>;
-  setLibraryCategory: StateSetter<string>;
-  setLibraryTitle: StateSetter<string>;
-  setLibraryOwnerName: StateSetter<string>;
-  setLibraryFilterCategory: StateSetter<string>;
-  setLibraryFilterQuery: StateSetter<string>;
-  setLibraryCreatedFrom: StateSetter<string>;
-  setLibraryCreatedTo: StateSetter<string>;
   setEvidenceQuery: StateSetter<string>;
   setEvidenceDocumentType: StateSetter<string>;
   setImportDocumentId: StateSetter<number | null>;
@@ -97,10 +68,6 @@ type KnowledgeLibraryViewProps = {
   handleCreateProject: FormSubmitHandler;
   handleUploadDocument: FormSubmitHandler;
   handleLoadEvidenceUnits: NumberAction;
-  handleCreateLibraryEntry: FormSubmitHandler;
-  handleApplyLibraryFilters: FormSubmitHandler;
-  handleResetLibraryFilters: VoidAction;
-  handleRunLibraryCheck: NumberAction;
   handleSearchEvidence: FormSubmitHandler;
   handleImportHistoricalBid: FormSubmitHandler;
   handleLoadHistoricalArtifacts: VoidAction;
@@ -119,7 +86,6 @@ export function KnowledgeLibraryView({
   selectedDocument,
   selectedDocumentId,
   selectedHistoricalBid,
-  knowledgeBaseEntries,
   evidenceResults,
   documentEvidenceUnits,
   historicalSections,
@@ -139,26 +105,6 @@ export function KnowledgeLibraryView({
   leakageResult,
   projectName,
   uploadType,
-  libraryCategory,
-  libraryTitle,
-  libraryOwnerName,
-  libraryFilterCategory,
-  libraryFilterQuery,
-  libraryCreatedFrom,
-  libraryCreatedTo,
-  qualificationName,
-  qualificationLevel,
-  qualificationCertificateNo,
-  qualificationValidUntil,
-  personnelName,
-  personnelRoleTitle,
-  personnelCertificateNo,
-  equipmentName,
-  equipmentModelNo,
-  equipmentQuantity,
-  credentialProjectName,
-  credentialType,
-  credentialOwnerName,
   evidenceQuery,
   evidenceDocumentType,
   token,
@@ -167,13 +113,6 @@ export function KnowledgeLibraryView({
   setProjectName,
   setUploadType,
   setUploadFile,
-  setLibraryCategory,
-  setLibraryTitle,
-  setLibraryOwnerName,
-  setLibraryFilterCategory,
-  setLibraryFilterQuery,
-  setLibraryCreatedFrom,
-  setLibraryCreatedTo,
   setEvidenceQuery,
   setEvidenceDocumentType,
   setImportDocumentId,
@@ -193,10 +132,6 @@ export function KnowledgeLibraryView({
   handleCreateProject,
   handleUploadDocument,
   handleLoadEvidenceUnits,
-  handleCreateLibraryEntry,
-  handleApplyLibraryFilters,
-  handleResetLibraryFilters,
-  handleRunLibraryCheck,
   handleSearchEvidence,
   handleImportHistoricalBid,
   handleLoadHistoricalArtifacts,
@@ -349,116 +284,6 @@ export function KnowledgeLibraryView({
             </div>
           </section>
 
-          <section className="surface-card workspace-span-2">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">资料台账</p>
-                <h3>企业与项目资料</h3>
-              </div>
-              <span className="badge">{knowledgeBaseEntries.length} 条资料</span>
-            </div>
-            <form className="stack" onSubmit={handleCreateLibraryEntry}>
-              <div className="three-column three-column-equal">
-                <label>
-                  资料分类
-                  <select value={libraryCategory} onChange={(event) => setLibraryCategory(event.target.value)}>
-                    <option value="historical_bid">历史标书</option>
-                    <option value="excellent_bid">优秀标书</option>
-                    <option value="company_qualification">公司资质</option>
-                    <option value="company_performance_asset">公司业绩与资产</option>
-                    <option value="personnel_qualification">人员资质</option>
-                    <option value="personnel_performance">人员业绩</option>
-                  </select>
-                </label>
-                <label>
-                  资料标题
-                  <input value={libraryTitle} onChange={(event) => setLibraryTitle(event.target.value)} />
-                </label>
-                <label>
-                  归口部门
-                  <input value={libraryOwnerName} onChange={(event) => setLibraryOwnerName(event.target.value)} />
-                </label>
-              </div>
-              <div className="inline-hint">
-                <span>当前绑定文档</span>
-                <strong>{selectedDocument ? `${selectedDocument.filename} #${selectedDocument.id}` : "未选择文档"}</strong>
-              </div>
-              <button
-                className="primary-button"
-                disabled={!token || !selectedProjectId || !libraryTitle.trim() || Boolean(busyLabel)}
-                type="submit"
-              >
-                登记入库并生成检测任务
-              </button>
-            </form>
-            <form className="stack" onSubmit={handleApplyLibraryFilters}>
-              <div className="panel-header compact">
-                <div>
-                  <p className="eyebrow">资料筛选</p>
-                  <h3>按分类、关键词、时间范围查询</h3>
-                </div>
-              </div>
-              <div className="three-column three-column-equal">
-                <label>
-                  分类
-                  <select value={libraryFilterCategory} onChange={(event) => setLibraryFilterCategory(event.target.value)}>
-                    <option value="all">全部分类</option>
-                    <option value="historical_bid">历史标书</option>
-                    <option value="excellent_bid">优秀标书</option>
-                    <option value="company_qualification">公司资质</option>
-                    <option value="company_performance_asset">公司业绩与资产</option>
-                    <option value="personnel_qualification">人员资质</option>
-                    <option value="personnel_performance">人员业绩</option>
-                  </select>
-                </label>
-                <label>
-                  关键词
-                  <input value={libraryFilterQuery} onChange={(event) => setLibraryFilterQuery(event.target.value)} placeholder="标题/部门/分类" />
-                </label>
-                <label>
-                  创建时间起
-                  <input type="date" value={libraryCreatedFrom} onChange={(event) => setLibraryCreatedFrom(event.target.value)} />
-                </label>
-              </div>
-              <div className="three-column three-column-equal">
-                <label>
-                  创建时间止
-                  <input type="date" value={libraryCreatedTo} onChange={(event) => setLibraryCreatedTo(event.target.value)} />
-                </label>
-                <div className="inline-hint">
-                  <span>当前结果</span>
-                  <strong>{knowledgeBaseEntries.length} 条</strong>
-                </div>
-                <div className="list-actions">
-                  <button className="primary-button" disabled={!token || Boolean(busyLabel)} type="submit">
-                    应用筛选
-                  </button>
-                  <button className="ghost-button" disabled={Boolean(busyLabel)} onClick={() => void handleResetLibraryFilters()} type="button">
-                    重置
-                  </button>
-                </div>
-              </div>
-            </form>
-            <div className="list">
-              {knowledgeBaseEntries.map((entry) => (
-                <div className="list-item static-item" key={entry.id}>
-                  <div>
-                    <strong>{entry.title}</strong>
-                    <p>
-                      {formatLibraryCategory(entry.category)} · {entry.owner_name || "未指定部门"}
-                    </p>
-                    <p>{entry.detected_summary || "待执行资料检测。"}</p>
-                  </div>
-                  <div className="list-actions">
-                    <span>{formatJobStatus(entry.detection_status)}</span>
-                    <button className="ghost-button" onClick={() => void handleRunLibraryCheck(entry.id)} type="button">
-                      运行检测
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
         </div>
 
       </section>

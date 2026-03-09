@@ -16,31 +16,6 @@ class WorkbenchOverviewResponse(BaseModel):
     modules: list[ModuleSummary]
 
 
-class KnowledgeBaseEntryCreate(BaseModel):
-    project_id: int | None = None
-    source_document_id: int | None = None
-    category: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=255)
-    owner_name: str = Field(default="", max_length=255)
-
-
-class KnowledgeBaseEntryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    organization_id: int
-    project_id: int | None
-    source_document_id: int | None
-    category: str
-    title: str
-    owner_name: str
-    ingestion_status: str
-    detection_status: str
-    detected_summary: str
-    created_by_user_id: int
-    created_at: datetime
-
-
 class LibraryProjectCategoryOption(BaseModel):
     key: str
     label: str

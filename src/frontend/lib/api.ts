@@ -184,28 +184,6 @@ export type WorkbenchOverview = {
   modules: WorkbenchModuleSummary[];
 };
 
-export type KnowledgeBaseEntry = {
-  id: number;
-  organization_id: number;
-  project_id: number | null;
-  source_document_id: number | null;
-  category: string;
-  title: string;
-  owner_name: string;
-  ingestion_status: string;
-  detection_status: string;
-  detected_summary: string;
-  created_by_user_id: number;
-  created_at: string;
-};
-
-export type KnowledgeBaseEntryFilters = {
-  category?: string;
-  q?: string;
-  created_from?: string;
-  created_to?: string;
-};
-
 export type LibraryProjectCategoryOption = {
   key: string;
   label: string;
@@ -667,65 +645,6 @@ export function getWorkbenchOverview(token: string, projectId?: number) {
   return apiRequest<WorkbenchOverview>(`/api/v1/workbench/overview${query ? `?${query}` : ""}`, {}, token);
 }
 
-export function listKnowledgeBaseEntries(
-  token: string,
-  projectId?: number,
-  filters: KnowledgeBaseEntryFilters = {},
-) {
-  const params = new URLSearchParams();
-  if (typeof projectId === "number") {
-    params.set("project_id", String(projectId));
-  }
-  if (filters.category) {
-    params.set("category", filters.category);
-  }
-  if (filters.q) {
-    params.set("q", filters.q);
-  }
-  if (filters.created_from) {
-    params.set("created_from", filters.created_from);
-  }
-  if (filters.created_to) {
-    params.set("created_to", filters.created_to);
-  }
-  const query = params.toString();
-  return apiRequest<KnowledgeBaseEntry[]>(
-    `/api/v1/workbench/library/entries${query ? `?${query}` : ""}`,
-    {},
-    token,
-  );
-}
-
-export function createKnowledgeBaseEntry(
-  token: string,
-  payload: {
-    project_id?: number;
-    source_document_id?: number;
-    category: string;
-    title: string;
-    owner_name?: string;
-  },
-) {
-  return apiRequest<KnowledgeBaseEntry>(
-    "/api/v1/workbench/library/entries",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    token,
-  );
-}
-
-export function runKnowledgeBaseCheck(token: string, entryId: number) {
-  return apiRequest<KnowledgeBaseEntry>(
-    `/api/v1/workbench/library/entries/${entryId}/run-check`,
-    {
-      method: "POST",
-    },
-    token,
-  );
-}
-
 export function listLibraryProjectCategories(token: string) {
   return apiRequest<LibraryProjectCategoryOption[]>("/api/v1/workbench/library/project-categories", {}, token);
 }
@@ -1182,7 +1101,7 @@ export function createSubmissionRecord(
 
 
 export function feedSubmissionRecordToLibrary(token: string, submissionRecordId: number) {
-  return apiRequest<KnowledgeBaseEntry>(
+  return apiRequest<LibraryRecord>(
     `/api/v1/workbench/submission-records/${submissionRecordId}/feed-to-library`,
     {
       method: "POST",

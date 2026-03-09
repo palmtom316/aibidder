@@ -160,7 +160,7 @@ def test_workbench_pipeline_builds_generation_review_layout_and_feed_back() -> N
         headers=headers,
     )
     assert feed_back.status_code == 201, feed_back.text
-    assert feed_back.json()["category"] == "excellent_bid"
+    assert feed_back.json()["record_type"] == "excellent_bid"
     assert feed_back.json()["title"] == "浙江输变电项目投标文件"
 
 

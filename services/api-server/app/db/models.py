@@ -123,6 +123,7 @@ class HistoricalBidDocument(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), nullable=False, unique=True, index=True)
+    library_record_id: Mapped[int | None] = mapped_column(ForeignKey("library_records.id"), nullable=True, unique=True, index=True)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     project_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     region: Mapped[str] = mapped_column(String(128), nullable=False, index=True)

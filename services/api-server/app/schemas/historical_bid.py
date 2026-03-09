@@ -18,6 +18,7 @@ class HistoricalBidResponse(BaseModel):
     id: int
     organization_id: int
     document_id: int
+    library_record_id: int | None
     source_type: str
     project_type: str
     region: str

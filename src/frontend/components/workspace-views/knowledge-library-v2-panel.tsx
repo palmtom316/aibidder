@@ -76,6 +76,7 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
   const [searchResults, setSearchResults] = useState<LibrarySearchResult[]>([]);
   const [pendingReviews, setPendingReviews] = useState<LibraryReview[]>([]);
   const [recordReviews, setRecordReviews] = useState<LibraryReview[]>([]);
+  const [statusFilter, setStatusFilter] = useState<"all" | "awaiting_review" | "published">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [busyLabel, setBusyLabel] = useState("");
   const [message, setMessage] = useState("新版资料库支持统一入库、附件挂载和检索。");
@@ -88,6 +89,9 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
   const [attachmentRole, setAttachmentRole] = useState("proof_contract");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
+  const [editableSummary, setEditableSummary] = useState("");
+  const [editableTags, setEditableTags] = useState("");
+  const [editableWeight, setEditableWeight] = useState("1.0");
 
   const [qualificationLevel, setQualificationLevel] = useState("");
   const [validUntil, setValidUntil] = useState("");
@@ -114,7 +118,10 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
   }
 
   async function loadRecords(currentToken: string, tab: RecordTabKey) {
-    const payload = await listLibraryRecords(currentToken, { record_type: tab });
+    const payload = await listLibraryRecords(currentToken, {
+      record_type: tab,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+    });
     setRecords(payload);
     const reviews = await listLibraryReviews(currentToken, { review_status: "awaiting_review" });
     setPendingReviews(reviews);
@@ -142,7 +149,7 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
       return;
     }
     void loadRecords(token, activeTab);
-  }, [token, activeTab]);
+  }, [token, activeTab, statusFilter]);
 
   useEffect(() => {
     if (documents.length > 0 && documentSourceId === null) {
@@ -164,6 +171,9 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
     setSelectedRecordId(recordId);
     const detail = await getLibraryRecordDetail(token, recordId);
     setSelectedRecordDetail(detail);
+    setEditableSummary(detail.summary_text || "");
+    setEditableTags(detail.tags_json || "[]");
+    setEditableWeight(String(detail.confidence_weight ?? 1));
     setRecordReviews(await listLibraryReviews(token, { record_id: recordId }));
   }
 
@@ -318,6 +328,26 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
     }
   }
 
+  async function handleSaveReviewEdits() {
+    if (!token || !selectedRecordId) {
+      return;
+    }
+    setBusyLabel("正在保存复核内容");
+    try {
+      await updateLibraryRecord(token, selectedRecordId, {
+        summary_text: editableSummary,
+        tags_json: editableTags,
+        confidence_weight: Number(editableWeight) || 1,
+        review_notes: reviewNotes,
+      });
+      await loadRecords(token, activeTab);
+      await handleSelectRecord(selectedRecordId);
+      setMessage("复核内容已保存。");
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
   function renderStructuredFields() {
     switch (activeTab) {
       case "company_qualification":
@@ -446,6 +476,29 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
               {tab.label}
             </button>
           ))}
+        </div>
+        <div className="list-actions">
+          <button
+            className={statusFilter === "all" ? "primary-button" : "ghost-button"}
+            onClick={() => setStatusFilter("all")}
+            type="button"
+          >
+            全部
+          </button>
+          <button
+            className={statusFilter === "awaiting_review" ? "primary-button" : "ghost-button"}
+            onClick={() => setStatusFilter("awaiting_review")}
+            type="button"
+          >
+            待复核
+          </button>
+          <button
+            className={statusFilter === "published" ? "primary-button" : "ghost-button"}
+            onClick={() => setStatusFilter("published")}
+            type="button"
+          >
+            已发布
+          </button>
         </div>
 
         <div className="summary-list">
@@ -600,7 +653,18 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
             </div>
             {selectedRecordDetail ? (
               <div className="stack">
-                <p>{selectedRecordDetail.summary_text || "待补充总结。"}</p>
+                <label>
+                  摘要
+                  <textarea value={editableSummary} onChange={(event) => setEditableSummary(event.target.value)} rows={4} />
+                </label>
+                <label>
+                  标签 JSON
+                  <input value={editableTags} onChange={(event) => setEditableTags(event.target.value)} />
+                </label>
+                <label>
+                  召回权重
+                  <input value={editableWeight} onChange={(event) => setEditableWeight(event.target.value)} />
+                </label>
                 <div className="summary-list">
                   <div className="summary-item">
                     <span>项目类别</span>
@@ -622,6 +686,9 @@ export function KnowledgeLibraryV2Panel({ token, selectedProjectId, documents }:
                     <input value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} />
                   </label>
                   <div className="list-actions">
+                    <button className="primary-button" disabled={Boolean(busyLabel)} onClick={() => void handleSaveReviewEdits()} type="button">
+                      保存复核内容
+                    </button>
                     <button className="ghost-button" disabled={Boolean(busyLabel)} onClick={() => void handleStatusChange("published")} type="button">
                       发布入库
                     </button>

@@ -248,3 +248,85 @@ def test_review_update_creates_library_review_history() -> None:
     assert len(payload) >= 2
     assert payload[0]["review_status"] == "published"
     assert "允许发布" in payload[0]["review_notes"]
+
+
+def test_review_update_persists_summary_tags_and_weight() -> None:
+    client = TestClient(app)
+    token = _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    created = client.post(
+        "/api/v1/workbench/library/company-performances",
+        json={
+            "title": "某营销工程业绩",
+            "project_category": "营销工程",
+            "owner_name": "经营管理部",
+            "contract_name": "营销工程合同",
+            "project_features": "营销系统改造",
+            "contract_amount": "580万元",
+            "start_date": "2024-01-01",
+            "completion_date": "2024-06-30",
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    record_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/api/v1/workbench/library/records/{record_id}",
+        json={
+            "summary_text": "营销工程业绩已人工复核，可作为同类项目参考。",
+            "tags_json": "[\"company_performance\",\"营销工程\",\"已复核\"]",
+            "confidence_weight": 3.4,
+            "review_notes": "补充人工标签和摘要。",
+        },
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    payload = updated.json()
+    assert payload["summary_text"] == "营销工程业绩已人工复核，可作为同类项目参考。"
+    assert payload["tags_json"] == "[\"company_performance\",\"营销工程\",\"已复核\"]"
+    assert payload["confidence_weight"] == 3.4
+
+
+def test_historical_bid_library_record_auto_syncs_into_historical_bid_domain() -> None:
+    client = TestClient(app)
+    token = _login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    project = client.post("/api/v1/projects", json={"name": "Historical Sync Project"}, headers=headers)
+    assert project.status_code == 201, project.text
+    project_id = project.json()["id"]
+
+    created = client.post(
+        "/api/v1/workbench/library/document-records/upload",
+        data={
+            "project_id": str(project_id),
+            "record_type": "historical_bid",
+            "title": "某配网工程历史标书",
+            "project_category": "配网工程",
+            "owner_name": "经营管理部",
+        },
+        files={
+            "file": (
+                "history-sync.docx",
+                _build_docx(
+                    ("Heading1", "第一章 项目概况"),
+                    ("Normal", "本项目用于历史复用同步测试。"),
+                    ("Heading1", "第二章 质量保证措施"),
+                    ("Normal", "项目经理张三承诺于2024年12月31日前完成质量目标。"),
+                ),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    library_record_id = created.json()["id"]
+
+    historical_list = client.get("/api/v1/historical-bids", headers=headers)
+    assert historical_list.status_code == 200, historical_list.text
+    payload = historical_list.json()
+    matched = next(item for item in payload if item["library_record_id"] == library_record_id)
+    assert matched["project_type"] == "配网工程"
+    assert matched["source_type"] == "won_bid"

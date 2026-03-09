@@ -8,7 +8,6 @@ import {
   approveGenerationOutline,
   createDecompositionRun,
   createGenerationJob,
-  createKnowledgeBaseEntry,
   createLayoutJob,
   createProject,
   createReviewRun,
@@ -23,8 +22,6 @@ import {
   HistoricalBidSection,
   HistoricalReusePack,
   HistoricalReuseUnit,
-  KnowledgeBaseEntry,
-  KnowledgeBaseEntryFilters,
   LayoutJob,
   listDecompositionRuns,
   listDocuments,
@@ -33,7 +30,6 @@ import {
   listHistoricalBids,
   listHistoricalReuseUnits,
   listHistoricalSections,
-  listKnowledgeBaseEntries,
   listLayoutJobs,
   listProjects,
   listReviewRuns,
@@ -42,7 +38,6 @@ import {
   Project,
   ReviewRun,
   runConnectivityCheck,
-  runKnowledgeBaseCheck,
   RuntimeConnectivityResult,
   RuntimeSettings,
   searchEvidence,
@@ -207,7 +202,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [evidenceResults, setEvidenceResults] = useState<EvidenceSearchResult[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [documentEvidenceUnits, setDocumentEvidenceUnits] = useState<EvidenceUnit[]>([]);
-  const [knowledgeBaseEntries, setKnowledgeBaseEntries] = useState<KnowledgeBaseEntry[]>([]);
   const [decompositionRuns, setDecompositionRuns] = useState<DecompositionRun[]>([]);
   const [selectedDecompositionRunId, setSelectedDecompositionRunId] = useState<number | null>(null);
   const [generationJobs, setGenerationJobs] = useState<GenerationJob[]>([]);
@@ -220,13 +214,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [selectedLayoutJobId, setSelectedLayoutJobId] = useState<number | null>(null);
   const [renderedOutputs, setRenderedOutputs] = useState<RenderedOutput[]>([]);
   const [submissionRecords, setSubmissionRecords] = useState<SubmissionRecord[]>([]);
-  const [libraryCategory, setLibraryCategory] = useState("excellent_bid");
-  const [libraryTitle, setLibraryTitle] = useState("2026 输变电优秀标书");
-  const [libraryOwnerName, setLibraryOwnerName] = useState("市场经营中心");
-  const [libraryFilterCategory, setLibraryFilterCategory] = useState("all");
-  const [libraryFilterQuery, setLibraryFilterQuery] = useState("");
-  const [libraryCreatedFrom, setLibraryCreatedFrom] = useState("");
-  const [libraryCreatedTo, setLibraryCreatedTo] = useState("");
   const [decompositionRunName, setDecompositionRunName] = useState("招标文件七类拆解");
   const [generationJobName, setGenerationJobName] = useState("技术标初稿生成");
   const [generationTargetSections, setGenerationTargetSections] = useState("7");
@@ -330,15 +317,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   }, [loginEmail, token]);
 
   const sidebarUserAccountLabel = token ? loginEmail.trim() : "请先登录";
-
-  function buildLibraryFilters(): KnowledgeBaseEntryFilters {
-    return {
-      category: libraryFilterCategory !== "all" ? libraryFilterCategory : undefined,
-      q: libraryFilterQuery.trim() || undefined,
-      created_from: libraryCreatedFrom ? `${libraryCreatedFrom}T00:00:00Z` : undefined,
-      created_to: libraryCreatedTo ? `${libraryCreatedTo}T23:59:59.999Z` : undefined,
-    };
-  }
 
   function buildSubmissionFilters(): SubmissionRecordFilters {
     return {
@@ -626,26 +604,22 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   async function refreshWorkbench(
     activeToken: string,
     projectId?: number,
-    libraryFilters: KnowledgeBaseEntryFilters = buildLibraryFilters(),
     submissionFilters: SubmissionRecordFilters = buildSubmissionFilters(),
   ) {
     try {
       const [
-        libraryRows,
         decompositionRows,
         generationRows,
         reviewRows,
         layoutRows,
         submissionRows,
       ] = await Promise.all([
-        listKnowledgeBaseEntries(activeToken, projectId, libraryFilters),
         listDecompositionRuns(activeToken, projectId),
         listGenerationJobs(activeToken, projectId),
         listReviewRuns(activeToken, projectId),
         listLayoutJobs(activeToken, projectId),
         listSubmissionRecords(activeToken, projectId, submissionFilters),
       ]);
-      setKnowledgeBaseEntries(libraryRows);
       setDecompositionRuns(decompositionRows);
       setGenerationJobs(generationRows);
       setReviewRuns(reviewRows);
@@ -738,61 +712,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     }
   }
 
-  async function handleCreateLibraryEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !selectedProjectId || !libraryTitle.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在登记投标资料");
-      await createKnowledgeBaseEntry(token, {
-        project_id: selectedProjectId,
-        source_document_id: selectedDocumentId ?? undefined,
-        category: libraryCategory,
-        title: libraryTitle.trim(),
-        owner_name: libraryOwnerName.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId);
-      setMessage("资料台账已新增一条入库记录。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleRunLibraryCheck(entryId: number) {
-    if (!token || !selectedProjectId) {
-      return;
-    }
-    try {
-      setBusyLabel("正在执行资料检测");
-      await runKnowledgeBaseCheck(token, entryId);
-      await refreshWorkbench(token, selectedProjectId);
-      setMessage(`投标资料 ${entryId} 已完成检测。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleApplyLibraryFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在筛选投标资料");
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      setMessage("资料台账筛选结果已刷新。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
   async function handleApplySubmissionFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
@@ -825,29 +744,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       setSubmissionCreatedTo("");
       await refreshWorkbench(token, selectedProjectId ?? undefined, buildLibraryFilters(), {});
       setMessage("已重置项目归档筛选条件。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleResetLibraryFilters() {
-    if (!token) {
-      setLibraryFilterCategory("all");
-      setLibraryFilterQuery("");
-      setLibraryCreatedFrom("");
-      setLibraryCreatedTo("");
-      return;
-    }
-    try {
-      setBusyLabel("正在重置资料筛选");
-      setLibraryFilterCategory("all");
-      setLibraryFilterQuery("");
-      setLibraryCreatedFrom("");
-      setLibraryCreatedTo("");
-      await refreshWorkbench(token, selectedProjectId ?? undefined, {});
-      setMessage("已重置资料台账筛选条件。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1511,16 +1407,12 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             evidenceDocumentType={evidenceDocumentType}
             evidenceQuery={evidenceQuery}
             evidenceResults={evidenceResults}
-            handleApplyLibraryFilters={handleApplyLibraryFilters}
-            handleCreateLibraryEntry={handleCreateLibraryEntry}
             handleCreateProject={handleCreateProject}
             handleImportHistoricalBid={handleImportHistoricalBid}
             handleLoadEvidenceUnits={handleLoadEvidenceUnits}
             handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
             handleRebuildReuseUnits={handleRebuildReuseUnits}
             handleRebuildSections={handleRebuildSections}
-            handleResetLibraryFilters={handleResetLibraryFilters}
-            handleRunLibraryCheck={handleRunLibraryCheck}
             handleSearchEvidence={handleSearchEvidence}
             handleSearchReuse={handleSearchReuse}
             handleUploadDocument={handleUploadDocument}
@@ -1534,19 +1426,11 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             historicalSourceType={historicalSourceType}
             historicalYear={historicalYear}
             importDocumentId={importDocumentId}
-            knowledgeBaseEntries={knowledgeBaseEntries}
             leakageDraftText={leakageDraftText}
             leakageForbiddenTerms={leakageForbiddenTerms}
             leakageResult={leakageResult}
             leakageReuseUnitIds={leakageReuseUnitIds}
             leakageSectionId={leakageSectionId}
-            libraryCategory={libraryCategory}
-            libraryCreatedFrom={libraryCreatedFrom}
-            libraryCreatedTo={libraryCreatedTo}
-            libraryFilterCategory={libraryFilterCategory}
-            libraryFilterQuery={libraryFilterQuery}
-            libraryOwnerName={libraryOwnerName}
-            libraryTitle={libraryTitle}
             message={message}
             onActivateModule={(module) => setActiveModule(module)}
             onOpenCopilot={() => setCopilotOpen(true)}
@@ -1571,13 +1455,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             setLeakageForbiddenTerms={setLeakageForbiddenTerms}
             setLeakageReuseUnitIds={setLeakageReuseUnitIds}
             setLeakageSectionId={setLeakageSectionId}
-            setLibraryCategory={setLibraryCategory}
-            setLibraryCreatedFrom={setLibraryCreatedFrom}
-            setLibraryCreatedTo={setLibraryCreatedTo}
-            setLibraryFilterCategory={setLibraryFilterCategory}
-            setLibraryFilterQuery={setLibraryFilterQuery}
-            setLibraryOwnerName={setLibraryOwnerName}
-            setLibraryTitle={setLibraryTitle}
             setProjectName={setProjectName}
             setReuseSectionType={setReuseSectionType}
             setSelectedHistoricalBidId={setSelectedHistoricalBidId}
@@ -1699,16 +1576,12 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             evidenceDocumentType={evidenceDocumentType}
             evidenceQuery={evidenceQuery}
             evidenceResults={evidenceResults}
-            handleApplyLibraryFilters={handleApplyLibraryFilters}
-            handleCreateLibraryEntry={handleCreateLibraryEntry}
             handleCreateProject={handleCreateProject}
             handleImportHistoricalBid={handleImportHistoricalBid}
             handleLoadEvidenceUnits={handleLoadEvidenceUnits}
             handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
             handleRebuildReuseUnits={handleRebuildReuseUnits}
             handleRebuildSections={handleRebuildSections}
-            handleResetLibraryFilters={handleResetLibraryFilters}
-            handleRunLibraryCheck={handleRunLibraryCheck}
             handleSearchEvidence={handleSearchEvidence}
             handleSearchReuse={handleSearchReuse}
             handleUploadDocument={handleUploadDocument}
@@ -1722,19 +1595,11 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             historicalSourceType={historicalSourceType}
             historicalYear={historicalYear}
             importDocumentId={importDocumentId}
-            knowledgeBaseEntries={knowledgeBaseEntries}
             leakageDraftText={leakageDraftText}
             leakageForbiddenTerms={leakageForbiddenTerms}
             leakageResult={leakageResult}
             leakageReuseUnitIds={leakageReuseUnitIds}
             leakageSectionId={leakageSectionId}
-            libraryCategory={libraryCategory}
-            libraryCreatedFrom={libraryCreatedFrom}
-            libraryCreatedTo={libraryCreatedTo}
-            libraryFilterCategory={libraryFilterCategory}
-            libraryFilterQuery={libraryFilterQuery}
-            libraryOwnerName={libraryOwnerName}
-            libraryTitle={libraryTitle}
             message={message}
             onActivateModule={(module) => setActiveModule(module)}
             onOpenCopilot={() => setCopilotOpen(true)}
@@ -1759,13 +1624,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             setLeakageForbiddenTerms={setLeakageForbiddenTerms}
             setLeakageReuseUnitIds={setLeakageReuseUnitIds}
             setLeakageSectionId={setLeakageSectionId}
-            setLibraryCategory={setLibraryCategory}
-            setLibraryCreatedFrom={setLibraryCreatedFrom}
-            setLibraryCreatedTo={setLibraryCreatedTo}
-            setLibraryFilterCategory={setLibraryFilterCategory}
-            setLibraryFilterQuery={setLibraryFilterQuery}
-            setLibraryOwnerName={setLibraryOwnerName}
-            setLibraryTitle={setLibraryTitle}
             setProjectName={setProjectName}
             setReuseSectionType={setReuseSectionType}
             setSelectedHistoricalBidId={setSelectedHistoricalBidId}
