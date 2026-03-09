@@ -239,6 +239,10 @@ def create_library_entry(
     )
     db.add(entry)
     db.flush()
+    if payload.source_document_id is not None:
+        source_document = db.scalar(select(Document).where(Document.id == payload.source_document_id))
+        if source_document is not None and source_document.document_type == "norm":
+            entry.detection_status, entry.detected_summary = run_knowledge_base_entry_check(db, entry)
     write_audit_log(
         db,
         action="workbench.library.create",
@@ -248,7 +252,11 @@ def create_library_entry(
         resource_type="knowledge_base_entry",
         resource_id=entry.id,
         request_id=getattr(request.state, "request_id", ""),
-        detail={"category": payload.category, "title": payload.title},
+        detail={
+            "category": payload.category,
+            "title": payload.title,
+            "detection_status": entry.detection_status,
+        },
     )
     db.commit()
     db.refresh(entry)

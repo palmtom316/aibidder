@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     runtime_api_base_url: str = "https://api.siliconflow.cn/v1"
     runtime_api_key: str | None = None
     ocr_role_model: str = "deepseek-ai/DeepSeek-OCR"
+    norm_summary_role_model: str = "Qwen/Qwen2.5-7B-Instruct-1M"
     decomposition_navigator_role_model: str = "deepseek-ai/DeepSeek-V3.2"
     decomposition_extractor_role_model: str = "Qwen/Qwen3-30B-A3B-Instruct-2507"
     writer_role_model: str = "deepseek-ai/DeepSeek-V3"
@@ -58,6 +59,7 @@ class Settings(BaseSettings):
     ocr_api_base_url: str | None = None
     ocr_api_key: str | None = None
     ocr_request_timeout_seconds: float = 30.0
+    norm_summary_request_timeout_seconds: float = 45.0
 
     async_document_ingestion: bool = False
     async_workbench_pipelines: bool = False
@@ -86,6 +88,42 @@ class Settings(BaseSettings):
             "writer_role": self.writer_role_model,
             "reviewer_role": self.reviewer_role_model,
             "adjudicator_role": self.adjudicator_role_model,
+        }
+
+    def runtime_role_configs(self) -> dict[str, dict[str, str | bool | None]]:
+        default_api_base_url = self.runtime_api_base_url
+        default_api_key_configured = bool(self.runtime_api_key)
+        return {
+            "ocr_role": {
+                "api_base_url": self.ocr_api_base_url or default_api_base_url,
+                "api_key_configured": bool(self.ocr_api_key) or default_api_key_configured,
+                "model": self.ocr_role_model,
+            },
+            "decomposition_navigator_role": {
+                "api_base_url": default_api_base_url,
+                "api_key_configured": default_api_key_configured,
+                "model": self.decomposition_navigator_role_model,
+            },
+            "decomposition_extractor_role": {
+                "api_base_url": default_api_base_url,
+                "api_key_configured": default_api_key_configured,
+                "model": self.decomposition_extractor_role_model,
+            },
+            "writer_role": {
+                "api_base_url": default_api_base_url,
+                "api_key_configured": default_api_key_configured,
+                "model": self.writer_role_model,
+            },
+            "reviewer_role": {
+                "api_base_url": default_api_base_url,
+                "api_key_configured": default_api_key_configured,
+                "model": self.reviewer_role_model,
+            },
+            "adjudicator_role": {
+                "api_base_url": default_api_base_url,
+                "api_key_configured": default_api_key_configured,
+                "model": self.adjudicator_role_model,
+            },
         }
 
     def cors_allowed_origins_list(self) -> list[str]:

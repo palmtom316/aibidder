@@ -4,11 +4,16 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import DocumentArtifact, DocumentVersion, KnowledgeBaseEntry
+from app.db.models import Document, DocumentArtifact, DocumentVersion, KnowledgeBaseEntry
+from app.services.norm_ingestion_checks import run_norm_entry_check
 from app.services.risk_marker import detect_risk_marks
 
 
 def run_knowledge_base_entry_check(db: Session, entry: KnowledgeBaseEntry) -> tuple[str, str]:
+    source_document = _load_source_document(db, entry)
+    if source_document is not None and source_document.document_type == "norm":
+        return run_norm_entry_check(db, entry)
+
     sampled_text = "\n".join(_collect_candidate_texts(db, entry))
     marks = detect_risk_marks(sampled_text)
     if not marks:
@@ -33,6 +38,11 @@ def run_knowledge_base_entry_check(db: Session, entry: KnowledgeBaseEntry) -> tu
         f"发现 {len(marks)} 处疑似敏感信息，建议清洗后再复用：{'；'.join(snippets)}",
     )
 
+
+def _load_source_document(db: Session, entry: KnowledgeBaseEntry) -> Document | None:
+    if entry.source_document_id is None:
+        return None
+    return db.scalar(select(Document).where(Document.id == entry.source_document_id))
 
 
 def _collect_candidate_texts(db: Session, entry: KnowledgeBaseEntry) -> Iterable[str]:

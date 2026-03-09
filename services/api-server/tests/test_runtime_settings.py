@@ -35,6 +35,43 @@ def test_runtime_settings_returns_debug_defaults() -> None:
         "reviewer_role": "deepseek-ai/DeepSeek-R1",
         "adjudicator_role": "deepseek-ai/DeepSeek-R1",
     }
+    assert payload["platform_config"] == {
+        "provider": "openai_compatible",
+        "api_base_url": "https://api.siliconflow.cn/v1",
+        "api_key_configured": False,
+    }
+    assert payload["role_configs"] == {
+        "ocr_role": {
+            "api_base_url": "https://api.siliconflow.cn/v1",
+            "api_key_configured": False,
+            "model": "deepseek-ai/DeepSeek-OCR",
+        },
+        "decomposition_navigator_role": {
+            "api_base_url": "https://api.siliconflow.cn/v1",
+            "api_key_configured": False,
+            "model": "deepseek-ai/DeepSeek-V3.2",
+        },
+        "decomposition_extractor_role": {
+            "api_base_url": "https://api.siliconflow.cn/v1",
+            "api_key_configured": False,
+            "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        },
+        "writer_role": {
+            "api_base_url": "https://api.siliconflow.cn/v1",
+            "api_key_configured": False,
+            "model": "deepseek-ai/DeepSeek-V3",
+        },
+        "reviewer_role": {
+            "api_base_url": "https://api.siliconflow.cn/v1",
+            "api_key_configured": False,
+            "model": "deepseek-ai/DeepSeek-R1",
+        },
+        "adjudicator_role": {
+            "api_base_url": "https://api.siliconflow.cn/v1",
+            "api_key_configured": False,
+            "model": "deepseek-ai/DeepSeek-R1",
+        },
+    }
 
 
 def test_connectivity_check_validates_selected_model(monkeypatch) -> None:

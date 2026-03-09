@@ -12,10 +12,14 @@ from app.api.routes.historical_bids import router as historical_bids_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.runtime_settings import router as runtime_settings_router
 from app.api.routes.workbench import router as workbench_router
+from app.core.anyio_compat import install_test_thread_compat
 from app.core.config import settings
 from app.db.bootstrap import initialize_database
 
 request_logger = logging.getLogger("aibidder.request")
+
+if settings.env.lower() == "test":
+    install_test_thread_compat()
 
 initialize_database()
 
