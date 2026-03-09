@@ -20,7 +20,7 @@ from app.db.models import (
     PersonnelPerformanceProfile,
     PersonnelQualificationProfile,
 )
-from app.services.norm_ingestion_checks import _build_rule_summary, _extract_clause_nodes
+from app.services.norm_structure import build_rule_summary, extract_clause_nodes
 
 LIBRARY_PROJECT_CATEGORIES = [
     "配网工程",
@@ -249,17 +249,14 @@ def _build_document_chunks(db: Session, record: LibraryRecord, version: LibraryR
     sections = payload.get("sections", [])
     chunks: list[LibraryChunk] = []
     if record.record_type == "norm_spec":
-        clause_nodes = _extract_clause_nodes(sections)
+        clause_nodes = extract_clause_nodes(sections)
         clause_samples = {node.clause_id: node for node in clause_nodes}
         for index, section in enumerate(sections, start=1):
             title = str(section.get("title") or f"Section {index}")
             content = str(section.get("content") or title)
             tags = _infer_tags(title=title, content=content, record=record)
             anchor = str(section.get("anchor") or f"section-{index}")
-            summary_text = _build_rule_summary(
-                parsed=type("Parsed", (), {"sections": sections, "markdown": "", "parser_name": "json"})(),
-                clause_nodes=clause_nodes,
-            )
+            summary_text = build_rule_summary(sections=sections, clause_nodes=clause_nodes)
             chunks.append(
                 LibraryChunk(
                     organization_id=record.organization_id,

@@ -183,23 +183,6 @@ class HistoricalRiskMark(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
-class KnowledgeBaseEntry(Base):
-    __tablename__ = "knowledge_base_entries"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
-    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
-    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True, index=True)
-    category: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    owner_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    ingestion_status: Mapped[str] = mapped_column(String(64), nullable=False, default="imported")
-    detection_status: Mapped[str] = mapped_column(String(64), nullable=False, default="pending")
-    detected_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
-
-
 class TenderRequirement(Base):
     __tablename__ = "tender_requirements"
 
