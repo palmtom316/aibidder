@@ -34,15 +34,11 @@ type SidebarNavItem = {
   label: string;
   kind: "module" | "action";
   moduleId?: string;
-  icon: "library" | "analysis" | "writing" | "review" | "layout" | "settings";
+  icon: "library" | "settings";
 };
 
 const NAV_ITEMS: SidebarNavItem[] = [
   { id: "knowledge-library", label: "投标资料库", kind: "module", moduleId: "knowledge-library", icon: "library" },
-  { id: "tender-analysis", label: "招标解析", kind: "module", moduleId: "tender-analysis", icon: "analysis" },
-  { id: "bid-generation", label: "标书编写", kind: "module", moduleId: "bid-generation", icon: "writing" },
-  { id: "bid-review", label: "标书审核", kind: "module", moduleId: "bid-review", icon: "review" },
-  { id: "layout-finalize", label: "标书排版", kind: "module", moduleId: "layout-finalize", icon: "layout" },
   { id: "settings", label: "设置", kind: "action", icon: "settings" },
 ];
 
@@ -51,10 +47,6 @@ function isModuleAvailable(modules: ModuleItem[], moduleId: string) {
 }
 
 function isModuleActive(activeModule: string, moduleId: string) {
-  if (moduleId === "bid-review") {
-    return activeModule === "bid-review";
-  }
-
   return activeModule === moduleId;
 }
 
@@ -135,39 +127,6 @@ function NavIcon({ icon }: { icon: SidebarNavItem["icon"] }) {
             strokeWidth="1.55"
           />
           <path d="M16.9 5.2 17.25 6.2 18.25 6.55 17.25 6.9 16.9 7.9 16.55 6.9 15.55 6.55 16.55 6.2 16.9 5.2Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
-        </svg>
-      );
-    case "analysis":
-      return (
-        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
-          <circle cx="10.5" cy="10.5" r="4.8" stroke="currentColor" strokeWidth="1.55" />
-          <path d="m14.2 14.2 3.8 3.8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
-          <path d="M16.9 5.15 17.25 6.15 18.25 6.5 17.25 6.85 16.9 7.85 16.55 6.85 15.55 6.5 16.55 6.15 16.9 5.15Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
-        </svg>
-      );
-    case "writing":
-      return (
-        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
-          <path d="m6.9 16.95 2.45-.58 7.35-7.35a1.7 1.7 0 1 0-2.4-2.4L6.95 13.97l-.58 2.4a.5.5 0 0 0 .53.58Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
-          <path d="M13.4 7.5 16.5 10.6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
-          <path d="M18.05 4.95 18.35 5.8 19.2 6.1 18.35 6.4 18.05 7.25 17.75 6.4 16.9 6.1 17.75 5.8 18.05 4.95Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
-        </svg>
-      );
-    case "review":
-      return (
-        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
-          <path d="M12 5.15 7.3 7.05v3.98c0 3.13 1.94 5.31 4.7 7.02 2.76-1.71 4.7-3.89 4.7-7.02V7.05L12 5.15Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
-          <path d="m10.1 11.95 1.35 1.35 2.85-2.85" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.55" />
-          <path d="M18 5.1 18.3 5.95 19.15 6.25 18.3 6.55 18 7.4 17.7 6.55 16.85 6.25 17.7 5.95 18 5.1Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
-        </svg>
-      );
-    case "layout":
-      return (
-        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
-          <rect x="5.05" y="5.45" width="13.9" height="13.1" rx="2.2" stroke="currentColor" strokeWidth="1.55" />
-          <path d="M9.45 5.45v13.1" stroke="currentColor" strokeWidth="1.55" />
-          <path d="M9.45 10.15h9.5" stroke="currentColor" strokeWidth="1.55" />
-          <path d="M17.8 4.95 18.1 5.8 18.95 6.1 18.1 6.4 17.8 7.25 17.5 6.4 16.65 6.1 17.5 5.8 17.8 4.95Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
         </svg>
       );
     case "settings":

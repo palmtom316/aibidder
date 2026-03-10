@@ -3,6 +3,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import {
+  ApiError,
   createCompanyAssetRecord,
   createCompanyPerformanceRecord,
   createCompanyQualificationRecord,
@@ -189,30 +190,44 @@ export function KnowledgeLibraryV2Panel({
   const [projectRole, setProjectRole] = useState("");
 
   async function loadProjectCategories(currentToken: string) {
-    const payload = await listLibraryProjectCategories(currentToken);
-    setProjectCategories(payload);
-    if (payload.length > 0) {
-      setProjectCategory(payload[0].key);
+    try {
+      const payload = await listLibraryProjectCategories(currentToken);
+      setProjectCategories(payload);
+      if (payload.length > 0) {
+        setProjectCategory(payload[0].key);
+      }
+    } catch (error) {
+      setProjectCategories([]);
+      setMessage(readClientError(error));
     }
   }
 
   async function loadRecords(currentToken: string, tab: RecordTabKey) {
-    const payload = await listLibraryRecords(currentToken, {
-      record_type: tab,
-      status: statusFilter !== "all" ? statusFilter : undefined,
-    });
-    setRecords(payload);
-    const reviews = await listLibraryReviews(currentToken, { review_status: "awaiting_review" });
-    setPendingReviews(reviews);
-    if (payload.length > 0) {
-      setSelectedRecordId(payload[0].id);
-      const detail = await getLibraryRecordDetail(currentToken, payload[0].id);
-      setSelectedRecordDetail(detail);
-      setRecordReviews(await listLibraryReviews(currentToken, { record_id: payload[0].id }));
-    } else {
+    try {
+      const payload = await listLibraryRecords(currentToken, {
+        record_type: tab,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+      });
+      setRecords(payload);
+      const reviews = await listLibraryReviews(currentToken, { review_status: "awaiting_review" });
+      setPendingReviews(reviews);
+      if (payload.length > 0) {
+        setSelectedRecordId(payload[0].id);
+        const detail = await getLibraryRecordDetail(currentToken, payload[0].id);
+        setSelectedRecordDetail(detail);
+        setRecordReviews(await listLibraryReviews(currentToken, { record_id: payload[0].id }));
+      } else {
+        setSelectedRecordId(null);
+        setSelectedRecordDetail(null);
+        setRecordReviews([]);
+      }
+    } catch (error) {
+      setRecords([]);
+      setPendingReviews([]);
       setSelectedRecordId(null);
       setSelectedRecordDetail(null);
       setRecordReviews([]);
+      setMessage(readClientError(error));
     }
   }
 
@@ -633,10 +648,10 @@ export function KnowledgeLibraryV2Panel({
             </div>
 
             {activeTab === "historical_bid" || activeTab === "excellent_bid" || activeTab === "norm_spec" ? (
-              <div className="three-column three-column-equal">
+              <div className="three-column three-column-equal" key="document-upload">
                 <label>
                   直接上传
-                  <input type="file" onChange={(event) => setDocumentUploadFile(event.target.files?.[0] ?? null)} />
+                  <input key="document-upload-file" type="file" onChange={(event) => setDocumentUploadFile(event.target.files?.[0] ?? null)} />
                 </label>
                 <label>
                   或选择已上传文档
@@ -654,7 +669,7 @@ export function KnowledgeLibraryV2Panel({
                 </label>
               </div>
             ) : (
-              renderStructuredFields()
+              <div key={activeTab}>{renderStructuredFields()}</div>
             )}
 
             <div className="list-actions">
@@ -1048,4 +1063,17 @@ export function KnowledgeLibraryV2Panel({
       </section>
     </section>
   );
+}
+
+function readClientError(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return "登录态已失效，请刷新页面后重新登录。";
+    }
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "资料库加载失败，请稍后重试。";
 }

@@ -64,19 +64,9 @@ import {
 import { AppShell } from "../components/app-shell";
 import { CopilotPanel } from "../components/copilot-panel";
 import { CopilotTrigger } from "../components/copilot-trigger";
-import { HomeContinueCard } from "../components/home-continue-card";
-import { HeroPanel } from "../components/hero-panel";
-import { TaskEntryCard } from "../components/task-entry-card";
 import { SettingsDrawer } from "../components/settings-drawer";
 import { WorkspaceSidebar } from "../components/workspace-sidebar";
-import {
-  BidGenerationView,
-  BidManagementView,
-  BidReviewView,
-  KnowledgeLibraryView,
-  LayoutFinalizeView,
-  TenderAnalysisView,
-} from "../components/workspace-views";
+import { KnowledgeLibraryView } from "../components/workspace-views";
 import {
   DEFAULT_RESUME_MODULE,
   PROJECT_ID_QUERY_PARAM,
@@ -87,7 +77,7 @@ import {
   parseProjectIdParam,
   type WorkspaceModule,
 } from "../components/workspace-views/shared";
-import { formatLibraryCategory, getResumeCardState } from "../components/workspace-views/utils";
+import { getResumeCardState } from "../components/workspace-views/utils";
 import { shouldCollapseCopilotOnInteraction, isNarrowViewport } from "../lib/copilot-visibility";
 import { clearStoredToken, getStorageItem, getStoredToken, setStorageItem, setStoredToken } from "../lib/session";
 
@@ -1206,34 +1196,14 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
     if (normalized.includes("资料") || normalized.includes("入库") || normalized.includes("上传")) {
       activateModule("knowledge-library");
-      return `${projectLabel}我已经切到「资料准备」。你可以先上传招标文件，再补充资质、人员、设备和业绩资料。`;
-    }
-    if (normalized.includes("分析") || normalized.includes("拆解") || normalized.includes("招标")) {
-      activateModule("tender-analysis");
-      return `${projectLabel}我已经切到「招标分析」。这里会拆解资格条件、评分点和风险条款，并支持与原文对照。`;
-    }
-    if (normalized.includes("生成") || normalized.includes("编写")) {
-      activateModule("bid-generation");
-      return `${projectLabel}我已经切到「内容编写」。系统会先生成章节框架，再逐章补齐投标内容。`;
-    }
-    if (normalized.includes("评审") || normalized.includes("检测") || normalized.includes("打分")) {
-      activateModule("bid-review");
-      return `${projectLabel}我已经切到「校核定稿」。这里可以继续检查评分风险、合规问题和废标隐患。`;
-    }
-    if (normalized.includes("排版") || normalized.includes("定稿")) {
-      activateModule("layout-finalize");
-      return `${projectLabel}我已经切到「排版导出」。可以继续整理版式，并导出送审文件。`;
-    }
-    if (normalized.includes("管理") || normalized.includes("中标") || normalized.includes("归档")) {
-      activateModule("bid-management");
-      return `${projectLabel}我已经切到「项目归档」。可以登记结果、归档成果，并沉淀后续复用资料。`;
+      return `${projectLabel}我已经切到「投标资料库」。你可以继续整理历史标书、规范规程和企业事实资料。`;
     }
     if (normalized.includes("设置") || normalized.includes("api") || normalized.includes("模型")) {
       setSettingsOpen(true);
       return "我已打开设置。这里可以调整模型服务地址、密钥和各环节默认模型。";
     }
 
-    return `你当前位于「${moduleLabel}」。${projectLabel}如果你愿意，我可以继续帮你解释这个模块的下一步操作，或者帮你跳到资料准备、招标分析、内容编写、校核定稿、排版导出、项目归档。`;
+    return `你当前位于「${moduleLabel}」。${projectLabel}如果你愿意，我可以继续帮你解释投标资料库里的下一步操作，或帮你打开设置。`;
   }
 
   function handleCopilotSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1249,86 +1219,22 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   }
 
   function renderHomeWorkspace() {
-    const nextResumeModule = resumeModule ?? DEFAULT_RESUME_MODULE;
-    const nextResumeModuleMeta =
-      WORKSPACE_MODULES.find((module) => module.id === nextResumeModule) ?? WORKSPACE_MODULES[1];
-    const continueTitle = selectedProject ? selectedProject.name : "请先选择本次要处理的项目";
-    const continueStep = selectedProject ? `上次停在：${nextResumeModuleMeta.label}` : "先在左侧选择项目";
-
-    const { detail: continueDetail, cue: continueCue } = getResumeCardState({
-      selectedProject: Boolean(selectedProject),
-      nextResumeModule,
-      nextResumeModuleMeta,
-      documentsCount: documents.length,
-      decompositionProgress: selectedDecompositionRun?.progress_pct ?? null,
-      generationTargetSections: selectedGenerationJob?.target_sections ?? null,
-      reviewBlockingIssues: selectedReviewRun?.blocking_issue_count ?? null,
-      reviewScore: selectedReviewRun?.simulated_score ?? null,
-      hasLayoutJob: Boolean(selectedLayoutJob),
-      renderedOutputCount: renderedOutputs.length,
-      submissionRecordCount: submissionRecords.length,
-    });
-
     return (
       <section className="workspace-stack">
-        <HeroPanel
-          projectCount={projects.length}
-          documentCount={documents.length}
-          historicalBidCount={historicalBids.length}
-        />
-
-        <section className="workspace-grid workspace-grid-3">
-          <TaskEntryCard
-            actionLabel="进入资料准备"
-            description="先上传招标文件，再补充资质、人员、设备和业绩资料。"
-            onAction={() => activateModule("knowledge-library")}
-            title="整理投标资料"
-          />
-          <TaskEntryCard
-            actionLabel="进入招标分析"
-            description="快速梳理资格要求、评分点、合同风险和废标条款。"
-            onAction={() => activateModule("tender-analysis")}
-            title="分析招标文件"
-          />
-          <TaskEntryCard
-            actionLabel="进入内容编写"
-            description="按章节生成投标内容，并结合证据与历史经验继续完善。"
-            onAction={() => activateModule("bid-generation")}
-            title="生成投标内容"
-          />
-          <TaskEntryCard
-            actionLabel="进入校核定稿"
-            description="检查评分项、废标风险和关键遗漏，减少提交风险。"
-            onAction={() => activateModule("bid-review")}
-            title="检查评分与废标风险"
-          />
-          <TaskEntryCard
-            actionLabel="进入排版导出"
-            description="整理版式、核对导出成果，准备最终提交材料。"
-            onAction={() => activateModule("layout-finalize")}
-            title="排版并导出"
-          />
-          <TaskEntryCard
-            actionLabel="进入项目归档"
-            description="归档成果、记录状态，并将可复用内容沉淀到后续项目。"
-            onAction={() => activateModule("bid-management")}
-            title="归档与复用"
-          />
+        <section className="surface-card surface-card-login">
+          <div className="panel-header">
+            <div>
+              <h3>投标资料库</h3>
+            </div>
+            <span className="badge">{selectedProject ? "已选择项目" : "未选择项目"}</span>
+          </div>
+          <div className="stack">
+            <p>{selectedProject ? `当前项目：${selectedProject.name}` : "请先选择项目，再进入投标资料库。"}</p>
+            <button className="primary-button" onClick={() => activateModule("knowledge-library")} type="button">
+              进入投标资料库
+            </button>
+          </div>
         </section>
-
-        <HomeContinueCard
-          actionLabel={selectedProject ? `继续${nextResumeModuleMeta.label}` : "先选择项目"}
-          cueLabel={continueCue}
-          detail={continueDetail}
-          disabled={!selectedProject}
-          onAction={() => {
-            if (selectedProject) {
-              activateModule(nextResumeModule);
-            }
-          }}
-          stepLabel={continueStep}
-          title={continueTitle}
-        />
       </section>
     );
   }
@@ -1336,11 +1242,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   function renderLoginWorkspace() {
     return (
       <section className="workspace-stack">
-        <HeroPanel
-          projectCount={projects.length}
-          documentCount={documents.length}
-          historicalBidCount={historicalBids.length}
-        />
         <section className="surface-card surface-card-login">
           <div className="panel-header">
             <div>
@@ -1464,175 +1365,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             uploadType={uploadType}
           />
         );
-      case "tender-analysis":
-        return (
-          <TenderAnalysisView
-            busyLabel={busyLabel}
-            decompositionPreviewBusy={decompositionPreviewBusy}
-            decompositionRunName={decompositionRunName}
-            decompositionRuns={decompositionRuns}
-            decompositionSourceMarkdown={decompositionSourceMarkdown}
-            decompositionSourcePreviewUrl={decompositionSourcePreviewUrl}
-            handleCreateDecompositionRun={handleCreateDecompositionRun}
-            handleDownloadDocumentArtifact={handleDownloadDocumentArtifact}
-            selectedDecompositionRun={selectedDecompositionRun}
-            selectedDocument={selectedDocument}
-            selectedProject={selectedProject}
-            selectedProjectId={selectedProjectId}
-            setDecompositionRunName={setDecompositionRunName}
-            setSelectedDecompositionRunId={setSelectedDecompositionRunId}
-            token={token}
-          />
-        );
-      case "bid-generation":
-        return (
-          <BidGenerationView
-            busyLabel={busyLabel}
-            generatedSections={generatedSections}
-            generationJobName={generationJobName}
-            generationJobs={generationJobs}
-            generationTargetSections={generationTargetSections}
-            handleApproveGenerationOutline={handleApproveGenerationOutline}
-            handleCreateGenerationJob={handleCreateGenerationJob}
-            selectedGenerationJob={selectedGenerationJob}
-            selectedGenerationJobId={selectedGenerationJobId}
-            selectedProjectId={selectedProjectId}
-            setGenerationJobName={setGenerationJobName}
-            setGenerationTargetSections={setGenerationTargetSections}
-            setSelectedGenerationJobId={setSelectedGenerationJobId}
-            token={token}
-          />
-        );
-      case "bid-review":
-        return (
-          <BidReviewView
-            busyLabel={busyLabel}
-            handleConfirmReviewRunPass={handleConfirmReviewRunPass}
-            handleCreateReviewRun={handleCreateReviewRun}
-            handleRemediateReviewIssue={handleRemediateReviewIssue}
-            reviewIssues={reviewIssues}
-            reviewMode={reviewMode}
-            reviewRunName={reviewRunName}
-            reviewRuns={reviewRuns}
-            selectedProjectId={selectedProjectId}
-            selectedReviewRun={selectedReviewRun}
-            selectedReviewRunId={selectedReviewRunId}
-            setReviewMode={setReviewMode}
-            setReviewRunName={setReviewRunName}
-            setSelectedReviewRunId={setSelectedReviewRunId}
-            token={token}
-          />
-        );
-      case "layout-finalize":
-        return (
-          <LayoutFinalizeView
-            busyLabel={busyLabel}
-            handleCreateLayoutJob={handleCreateLayoutJob}
-            handleDownloadRenderedOutput={handleDownloadRenderedOutput}
-            layoutJobName={layoutJobName}
-            layoutJobs={layoutJobs}
-            layoutTemplateName={layoutTemplateName}
-            renderedOutputs={renderedOutputs}
-            selectedLayoutJob={selectedLayoutJob}
-            selectedLayoutJobId={selectedLayoutJobId}
-            selectedProjectId={selectedProjectId}
-            setLayoutJobName={setLayoutJobName}
-            setLayoutTemplateName={setLayoutTemplateName}
-            setSelectedLayoutJobId={setSelectedLayoutJobId}
-            token={token}
-          />
-        );
-      case "bid-management":
-        return (
-          <BidManagementView
-            busyLabel={busyLabel}
-            handleApplySubmissionFilters={handleApplySubmissionFilters}
-            handleCreateSubmissionRecord={handleCreateSubmissionRecord}
-            handleFeedSubmissionRecordToLibrary={handleFeedSubmissionRecordToLibrary}
-            handleResetSubmissionFilters={handleResetSubmissionFilters}
-            selectedProjectId={selectedProjectId}
-            setSubmissionCreatedFrom={setSubmissionCreatedFrom}
-            setSubmissionCreatedTo={setSubmissionCreatedTo}
-            setSubmissionFilterQuery={setSubmissionFilterQuery}
-            setSubmissionFilterStatus={setSubmissionFilterStatus}
-            setSubmissionStatus={setSubmissionStatus}
-            setSubmissionTitle={setSubmissionTitle}
-            submissionCreatedFrom={submissionCreatedFrom}
-            submissionCreatedTo={submissionCreatedTo}
-            submissionFilterQuery={submissionFilterQuery}
-            submissionFilterStatus={submissionFilterStatus}
-            submissionRecords={submissionRecords}
-            submissionStatus={submissionStatus}
-            submissionTitle={submissionTitle}
-            token={token}
-          />
-        );
       default:
-        return (
-          <KnowledgeLibraryView
-            busyLabel={busyLabel}
-            documentEvidenceUnits={documentEvidenceUnits}
-            documents={documents}
-            evidenceDocumentType={evidenceDocumentType}
-            evidenceQuery={evidenceQuery}
-            evidenceResults={evidenceResults}
-            handleCreateProject={handleCreateProject}
-            handleImportHistoricalBid={handleImportHistoricalBid}
-            handleLoadEvidenceUnits={handleLoadEvidenceUnits}
-            handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
-            handleRebuildReuseUnits={handleRebuildReuseUnits}
-            handleRebuildSections={handleRebuildSections}
-            handleSearchEvidence={handleSearchEvidence}
-            handleSearchReuse={handleSearchReuse}
-            handleUploadDocument={handleUploadDocument}
-            handleVerifyLeakage={handleVerifyLeakage}
-            historicalBids={historicalBids}
-            historicalProjectType={historicalProjectType}
-            historicalRecommended={historicalRecommended}
-            historicalRegion={historicalRegion}
-            historicalReuseUnits={historicalReuseUnits}
-            historicalSections={historicalSections}
-            historicalSourceType={historicalSourceType}
-            historicalYear={historicalYear}
-            importDocumentId={importDocumentId}
-            leakageDraftText={leakageDraftText}
-            leakageForbiddenTerms={leakageForbiddenTerms}
-            leakageResult={leakageResult}
-            leakageReuseUnitIds={leakageReuseUnitIds}
-            leakageSectionId={leakageSectionId}
-            message={message}
-            onActivateModule={(module) => setActiveModule(module)}
-            onOpenCopilot={() => setCopilotOpen(true)}
-            projectName={projectName}
-            projects={projects}
-            reusePack={reusePack}
-            reuseSectionType={reuseSectionType}
-            selectedDocument={selectedDocument}
-            selectedDocumentId={selectedDocumentId}
-            selectedHistoricalBid={selectedHistoricalBid}
-            selectedProject={selectedProject}
-            selectedProjectId={selectedProjectId}
-            setEvidenceDocumentType={setEvidenceDocumentType}
-            setEvidenceQuery={setEvidenceQuery}
-            setHistoricalProjectType={setHistoricalProjectType}
-            setHistoricalRecommended={setHistoricalRecommended}
-            setHistoricalRegion={setHistoricalRegion}
-            setHistoricalSourceType={setHistoricalSourceType}
-            setHistoricalYear={setHistoricalYear}
-            setImportDocumentId={setImportDocumentId}
-            setLeakageDraftText={setLeakageDraftText}
-            setLeakageForbiddenTerms={setLeakageForbiddenTerms}
-            setLeakageReuseUnitIds={setLeakageReuseUnitIds}
-            setLeakageSectionId={setLeakageSectionId}
-            setProjectName={setProjectName}
-            setReuseSectionType={setReuseSectionType}
-            setSelectedHistoricalBidId={setSelectedHistoricalBidId}
-            setUploadFile={setUploadFile}
-            setUploadType={setUploadType}
-            token={token}
-            uploadType={uploadType}
-          />
-        );
+        return renderHomeWorkspace();
     }
   }
 
