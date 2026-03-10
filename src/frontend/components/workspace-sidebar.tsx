@@ -34,11 +34,12 @@ type SidebarNavItem = {
   label: string;
   kind: "module" | "action";
   moduleId?: string;
-  icon: "library" | "settings";
+  icon: "library" | "copilot" | "settings";
 };
 
 const NAV_ITEMS: SidebarNavItem[] = [
   { id: "knowledge-library", label: "投标资料库", kind: "module", moduleId: "knowledge-library", icon: "library" },
+  { id: "copilot", label: "Copilot", kind: "action", icon: "copilot" },
   { id: "settings", label: "设置", kind: "action", icon: "settings" },
 ];
 
@@ -129,6 +130,32 @@ function NavIcon({ icon }: { icon: SidebarNavItem["icon"] }) {
           <path d="M16.9 5.2 17.25 6.2 18.25 6.55 17.25 6.9 16.9 7.9 16.55 6.9 15.55 6.55 16.55 6.2 16.9 5.2Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
         </svg>
       );
+    case "copilot":
+      return (
+        <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 4.25 13.48 8.52 17.75 10 13.48 11.48 12 15.75 10.52 11.48 6.25 10l4.27-1.48L12 4.25Z"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.45"
+          />
+          <path
+            d="M17.65 5.6 18.05 6.7 19.15 7.1 18.05 7.5 17.65 8.6 17.25 7.5 16.15 7.1 17.25 6.7 17.65 5.6Z"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.25"
+          />
+          <path
+            d="M17.65 14.9 18.05 16 19.15 16.4 18.05 16.8 17.65 17.9 17.25 16.8 16.15 16.4 17.25 16 17.65 14.9Z"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.25"
+          />
+        </svg>
+      );
     case "settings":
       return (
         <svg aria-hidden="true" className="sidebar-nav-svg" viewBox="0 0 24 24" fill="none">
@@ -155,6 +182,7 @@ export function WorkspaceSidebar({
   userAccountLabel,
   onSelectModule,
   onToggleCollapsed,
+  onOpenCopilot,
   onOpenSettings,
 }: WorkspaceSidebarProps) {
   const visibleItems = NAV_ITEMS.filter((item) => item.kind === "action" || isModuleAvailable(modules, item.moduleId ?? ""));
@@ -190,6 +218,11 @@ export function WorkspaceSidebar({
             const handleClick = () => {
               if (item.kind === "module" && item.moduleId) {
                 onSelectModule(item.moduleId);
+                return;
+              }
+
+              if (item.id === "copilot") {
+                onOpenCopilot();
                 return;
               }
 

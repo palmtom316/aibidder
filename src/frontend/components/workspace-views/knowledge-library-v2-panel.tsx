@@ -558,36 +558,44 @@ export function KnowledgeLibraryV2Panel({
           <span className="badge">{busyLabel || "就绪"}</span>
         </div>
 
-        <div className="list-actions">
+        <div className="library-record-tabs" role="tablist" aria-label="资料类型">
           {RECORD_TABS.map((tab) => (
             <button
+              aria-selected={activeTab === tab.key}
               key={tab.key}
-              className={activeTab === tab.key ? "primary-button" : "ghost-button"}
+              className={`library-record-tab ${activeTab === tab.key ? "library-record-tab-active" : ""}`}
               onClick={() => setActiveTab(tab.key)}
+              role="tab"
               type="button"
             >
               {tab.label}
             </button>
           ))}
         </div>
-        <div className="list-actions">
+        <div className="library-filter-tabs" role="tablist" aria-label="资料状态">
           <button
-            className={statusFilter === "all" ? "primary-button" : "ghost-button"}
+            aria-selected={statusFilter === "all"}
+            className={`library-filter-tab ${statusFilter === "all" ? "library-filter-tab-active" : ""}`}
             onClick={() => setStatusFilter("all")}
+            role="tab"
             type="button"
           >
             全部
           </button>
           <button
-            className={statusFilter === "awaiting_review" ? "primary-button" : "ghost-button"}
+            aria-selected={statusFilter === "awaiting_review"}
+            className={`library-filter-tab ${statusFilter === "awaiting_review" ? "library-filter-tab-active" : ""}`}
             onClick={() => setStatusFilter("awaiting_review")}
+            role="tab"
             type="button"
           >
             待复核
           </button>
           <button
-            className={statusFilter === "published" ? "primary-button" : "ghost-button"}
+            aria-selected={statusFilter === "published"}
+            className={`library-filter-tab ${statusFilter === "published" ? "library-filter-tab-active" : ""}`}
             onClick={() => setStatusFilter("published")}
+            role="tab"
             type="button"
           >
             已发布

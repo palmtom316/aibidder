@@ -82,19 +82,20 @@ export function AppShell({
     <div className="console-shell" data-current-view={currentView}>
       {sidebar}
       <main className="console-main">
-        <header className="workspace-header" aria-label="页面标题栏">
-          <div className="stack compact">
-            <p className="eyebrow">投标工作台</p>
-            <h1>{title}</h1>
-            {subtitle ? <p className="workspace-subtitle">{subtitle}</p> : null}
-          </div>
-          {hasToolbar ? <div className="workspace-toolbar">{toolbar}{copilotTrigger}</div> : null}
-        </header>
+        <section className="workspace-page-shell">
+          <header className="workspace-header" aria-label="页面标题栏">
+            <div className="stack compact">
+              <h1>{title}</h1>
+              {subtitle ? <p className="workspace-subtitle">{subtitle}</p> : null}
+            </div>
+            {hasToolbar ? <div className="workspace-toolbar">{toolbar}{copilotTrigger}</div> : null}
+          </header>
 
-        {showProjectContext && resolvedProjectContext ? <ProjectContextBar context={resolvedProjectContext} /> : null}
+          {showProjectContext && resolvedProjectContext ? <ProjectContextBar context={resolvedProjectContext} /> : null}
 
-        <section className="workspace-stack" aria-label="页面主要内容">
-          {children}
+          <section className="workspace-stack workspace-content-stack" aria-label="页面主要内容">
+            {children}
+          </section>
         </section>
       </main>
     </div>

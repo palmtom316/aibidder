@@ -83,6 +83,9 @@ export function SettingsDrawer({
       runtimeForm.platformConfig.apiBaseUrl.trim() &&
       runtimeForm.platformConfig.apiKey.trim(),
   );
+  const platformStatusLabel = platformReady || runtimeSettings?.api_key_configured ? "已配置" : "待配置";
+  const reviewModelLabel = runtimeForm.roleConfigs.adjudicator_role.model || "未设置";
+  const ocrModelLabel = runtimeForm.roleConfigs.ocr_role.model || "未设置";
 
   return (
     <div className={`settings-drawer-wrap ${open ? "is-open" : ""}`} aria-hidden={!open}>
@@ -91,12 +94,33 @@ export function SettingsDrawer({
         <div className="drawer-header settings-header-minimal diagnostic-header">
           <div className="drawer-title-group">
             <span className="badge">Settings</span>
-            <h3>模型设置</h3>
+            <div className="stack compact">
+              <h3>模型设置</h3>
+              <p className="drawer-subtitle">统一管理 OCR、分析、写作和复核所用模型。</p>
+            </div>
           </div>
           <button className="ghost-button settings-close-button" onClick={onClose} type="button">
             关闭
           </button>
         </div>
+
+        <section className="settings-overview" aria-label="当前配置概览">
+          <article className="settings-overview-card">
+            <span className="eyebrow">平台</span>
+            <strong>{platformStatusLabel}</strong>
+            <p>{runtimeForm.platformConfig.provider || "未填写平台名称"}</p>
+          </article>
+          <article className="settings-overview-card">
+            <span className="eyebrow">OCR</span>
+            <strong>{ocrModelLabel}</strong>
+            <p>文件识别入口</p>
+          </article>
+          <article className="settings-overview-card">
+            <span className="eyebrow">复核</span>
+            <strong>{reviewModelLabel}</strong>
+            <p>结果验收与判断</p>
+          </article>
+        </section>
 
         <div className="settings-tabs" role="tablist" aria-label="模型设置分组">
           {SETTINGS_TABS.map((tab) => (
@@ -111,6 +135,11 @@ export function SettingsDrawer({
               {tab.label}
             </button>
           ))}
+        </div>
+
+        <div className="settings-callout">
+          <span className="settings-callout-dot" aria-hidden="true" />
+          <p>各角色可单独指定 Base URL、API Key 与模型，检查按钮会仅验证当前项。</p>
         </div>
 
         {activeTab === "platform" ? (
