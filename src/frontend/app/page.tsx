@@ -5,61 +5,30 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   ApiError,
-  approveGenerationOutline,
-  createDecompositionRun,
-  createGenerationJob,
-  createLayoutJob,
   createProject,
-  createReviewRun,
-  confirmReviewRunPass,
-  createSubmissionRecord,
-  downloadDocumentArtifact,
-  DecompositionRun,
   DocumentRecord,
-  GenerationJob,
   getRuntimeSettings,
   HistoricalBid,
   HistoricalBidSection,
+  HistoricalLeakageResult,
   HistoricalReusePack,
   HistoricalReuseUnit,
-  LayoutJob,
-  listDecompositionRuns,
+  importHistoricalBid,
   listDocuments,
-  listEvidenceUnits,
-  listGenerationJobs,
   listHistoricalBids,
   listHistoricalReuseUnits,
   listHistoricalSections,
-  listLayoutJobs,
   listProjects,
-  listReviewRuns,
-  listSubmissionRecords,
   login,
   Project,
-  ReviewRun,
+  rebuildHistoricalReuseUnits,
+  rebuildHistoricalSections,
   runConnectivityCheck,
   RuntimeConnectivityResult,
   RuntimeSettings,
-  searchEvidence,
   searchHistoricalReuse,
-  SubmissionRecord,
-  SubmissionRecordFilters,
   uploadDocument,
   verifyHistoricalLeakage,
-  importHistoricalBid,
-  rebuildHistoricalSections,
-  rebuildHistoricalReuseUnits,
-  EvidenceSearchResult,
-  EvidenceUnit,
-  feedSubmissionRecordToLibrary,
-  GeneratedSection,
-  listGeneratedSections,
-  downloadRenderedOutput,
-  listRenderedOutputs,
-  listReviewIssues,
-  remediateReviewIssue,
-  RenderedOutput,
-  ReviewIssue,
 } from "../lib/api";
 import { AppShell } from "../components/app-shell";
 import { CopilotPanel } from "../components/copilot-panel";
@@ -68,18 +37,13 @@ import { SettingsDrawer } from "../components/settings-drawer";
 import { WorkspaceSidebar } from "../components/workspace-sidebar";
 import { KnowledgeLibraryView } from "../components/workspace-views";
 import {
-  DEFAULT_RESUME_MODULE,
   PROJECT_ID_QUERY_PARAM,
   WORKSPACE_MODULES,
   buildModuleHref,
-  isResumableModule,
-  lastVisitedModuleStorageKey,
   parseProjectIdParam,
   type WorkspaceModule,
 } from "../components/workspace-views/shared";
-import { getResumeCardState } from "../components/workspace-views/utils";
-import { shouldCollapseCopilotOnInteraction, isNarrowViewport } from "../lib/copilot-visibility";
-import { clearStoredToken, getStorageItem, getStoredToken, setStorageItem, setStoredToken } from "../lib/session";
+import { clearStoredToken, getStoredToken, setStoredToken } from "../lib/session";
 
 type RuntimeRole = keyof RuntimeSettings["default_models"];
 
@@ -100,6 +64,12 @@ type RuntimeFormState = {
   roleConfigs: Record<RuntimeRole, RuntimeRoleConfig>;
 };
 
+type CopilotMessage = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+};
+
 const DEFAULT_RUNTIME_API_BASE_URL = "https://api.siliconflow.cn/v1";
 
 const EMPTY_MODELS: RuntimeSettings["default_models"] = {
@@ -110,7 +80,6 @@ const EMPTY_MODELS: RuntimeSettings["default_models"] = {
   reviewer_role: "deepseek-ai/DeepSeek-R1",
   adjudicator_role: "deepseek-ai/DeepSeek-R1",
 };
-
 
 function buildRuntimeRoleConfigs(
   models: RuntimeSettings["default_models"],
@@ -151,19 +120,14 @@ function buildRuntimeRoleConfigs(
   };
 }
 
-type CopilotMessage = {
-  id: string;
-  role: "assistant" | "user";
-  text: string;
-};
-
 export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectIdFromUrl = parseProjectIdParam(searchParams.get(PROJECT_ID_QUERY_PARAM));
+
   const [token, setToken] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>("请先登录，再查看项目和投标资料。");
-  const [busyLabel, setBusyLabel] = useState<string>("");
+  const [message, setMessage] = useState("请先登录，再进入投标资料库。");
+  const [busyLabel, setBusyLabel] = useState("");
   const [loginEmail, setLoginEmail] = useState("admin@example.com");
   const [loginPassword, setLoginPassword] = useState("admin123456");
 
@@ -184,42 +148,8 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [projectName, setProjectName] = useState("");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
-  const [uploadType, setUploadType] = useState("tender");
+  const [uploadType, setUploadType] = useState("proposal");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-
-  const [evidenceQuery, setEvidenceQuery] = useState("");
-  const [evidenceDocumentType, setEvidenceDocumentType] = useState("");
-  const [evidenceResults, setEvidenceResults] = useState<EvidenceSearchResult[]>([]);
-  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
-  const [documentEvidenceUnits, setDocumentEvidenceUnits] = useState<EvidenceUnit[]>([]);
-  const [decompositionRuns, setDecompositionRuns] = useState<DecompositionRun[]>([]);
-  const [selectedDecompositionRunId, setSelectedDecompositionRunId] = useState<number | null>(null);
-  const [generationJobs, setGenerationJobs] = useState<GenerationJob[]>([]);
-  const [selectedGenerationJobId, setSelectedGenerationJobId] = useState<number | null>(null);
-  const [generatedSections, setGeneratedSections] = useState<GeneratedSection[]>([]);
-  const [reviewRuns, setReviewRuns] = useState<ReviewRun[]>([]);
-  const [selectedReviewRunId, setSelectedReviewRunId] = useState<number | null>(null);
-  const [reviewIssues, setReviewIssues] = useState<ReviewIssue[]>([]);
-  const [layoutJobs, setLayoutJobs] = useState<LayoutJob[]>([]);
-  const [selectedLayoutJobId, setSelectedLayoutJobId] = useState<number | null>(null);
-  const [renderedOutputs, setRenderedOutputs] = useState<RenderedOutput[]>([]);
-  const [submissionRecords, setSubmissionRecords] = useState<SubmissionRecord[]>([]);
-  const [decompositionRunName, setDecompositionRunName] = useState("招标文件七类拆解");
-  const [generationJobName, setGenerationJobName] = useState("技术标初稿生成");
-  const [generationTargetSections, setGenerationTargetSections] = useState("7");
-  const [reviewRunName, setReviewRunName] = useState("模拟打分与合规复核");
-  const [reviewMode, setReviewMode] = useState("simulated_scoring");
-  const [layoutJobName, setLayoutJobName] = useState("企业模板排版");
-  const [layoutTemplateName, setLayoutTemplateName] = useState("corporate-default");
-  const [submissionTitle, setSubmissionTitle] = useState("投标文件回灌记录");
-  const [submissionStatus, setSubmissionStatus] = useState("draft");
-  const [submissionFilterStatus, setSubmissionFilterStatus] = useState("all");
-  const [submissionFilterQuery, setSubmissionFilterQuery] = useState("");
-  const [submissionCreatedFrom, setSubmissionCreatedFrom] = useState("");
-  const [submissionCreatedTo, setSubmissionCreatedTo] = useState("");
-  const [decompositionSourceMarkdown, setDecompositionSourceMarkdown] = useState("");
-  const [decompositionSourcePreviewUrl, setDecompositionSourcePreviewUrl] = useState<string | null>(null);
-  const [decompositionPreviewBusy, setDecompositionPreviewBusy] = useState(false);
 
   const [historicalBids, setHistoricalBids] = useState<HistoricalBid[]>([]);
   const [selectedHistoricalBidId, setSelectedHistoricalBidId] = useState<number | null>(null);
@@ -227,19 +157,19 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   const [historicalReuseUnits, setHistoricalReuseUnits] = useState<HistoricalReuseUnit[]>([]);
   const [importDocumentId, setImportDocumentId] = useState<number | null>(null);
   const [historicalSourceType, setHistoricalSourceType] = useState("won_bid");
-  const [historicalProjectType, setHistoricalProjectType] = useState("power-construction");
+  const [historicalProjectType, setHistoricalProjectType] = useState("配网工程");
   const [historicalRegion, setHistoricalRegion] = useState("华东");
   const [historicalYear, setHistoricalYear] = useState(String(new Date().getFullYear()));
   const [historicalRecommended, setHistoricalRecommended] = useState(true);
-  const [reuseSectionType, setReuseSectionType] = useState("quality");
+  const [reuseSectionType, setReuseSectionType] = useState("quality_assurance");
   const [reusePack, setReusePack] = useState<HistoricalReusePack | null>(null);
   const [leakageSectionId, setLeakageSectionId] = useState("draft-1");
   const [leakageDraftText, setLeakageDraftText] = useState("");
   const [leakageForbiddenTerms, setLeakageForbiddenTerms] = useState("");
   const [leakageReuseUnitIds, setLeakageReuseUnitIds] = useState("");
-  const [leakageResult, setLeakageResult] = useState<{ ok: boolean; matched_terms: string[] } | null>(null);
+  const [leakageResult, setLeakageResult] = useState<HistoricalLeakageResult | null>(null);
+
   const [activeModule, setActiveModule] = useState<WorkspaceModule>(forcedModule ?? "home");
-  const [resumeModule, setResumeModule] = useState<Exclude<WorkspaceModule, "home"> | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -250,81 +180,23 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   );
-
-  const selectedDocument = useMemo(
-    () => documents.find((document) => document.id === selectedDocumentId) ?? null,
-    [documents, selectedDocumentId],
-  );
-
   const selectedHistoricalBid = useMemo(
     () => historicalBids.find((item) => item.id === selectedHistoricalBidId) ?? null,
     [historicalBids, selectedHistoricalBidId],
   );
-
-  const selectedDecompositionRun = useMemo(
-    () => decompositionRuns.find((item) => item.id === selectedDecompositionRunId) ?? decompositionRuns[0] ?? null,
-    [decompositionRuns, selectedDecompositionRunId],
-  );
-
-  const selectedDecompositionSourceDocument = useMemo(
-    () =>
-      documents.find((document) => document.id === selectedDecompositionRun?.source_document_id) ?? null,
-    [documents, selectedDecompositionRun],
-  );
-
-  const selectedGenerationJob = useMemo(
-    () => generationJobs.find((item) => item.id === selectedGenerationJobId) ?? generationJobs[0] ?? null,
-    [generationJobs, selectedGenerationJobId],
-  );
-
-  const selectedReviewRun = useMemo(
-    () => reviewRuns.find((item) => item.id === selectedReviewRunId) ?? reviewRuns[0] ?? null,
-    [reviewRuns, selectedReviewRunId],
-  );
-
-  const selectedLayoutJob = useMemo(
-    () => layoutJobs.find((item) => item.id === selectedLayoutJobId) ?? layoutJobs[0] ?? null,
-    [layoutJobs, selectedLayoutJobId],
-  );
-
   const activeModuleMeta = useMemo(
     () => WORKSPACE_MODULES.find((module) => module.id === activeModule) ?? WORKSPACE_MODULES[0],
     [activeModule],
   );
 
-  const sidebarUserName = useMemo(() => {
-    const identity = loginEmail.trim();
-    if (!identity) {
-      return token ? "AIBidder User" : "访客";
-    }
-
-    const localPart = identity.split("@")[0] ?? identity;
-    return localPart
-      .split(/[._-]+/)
-      .filter(Boolean)
-      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-      .join(" ");
-  }, [loginEmail, token]);
-
-  const sidebarUserAccountLabel = token ? loginEmail.trim() : "请先登录";
-
-  function buildSubmissionFilters(): SubmissionRecordFilters {
-    return {
-      status: submissionFilterStatus !== "all" ? submissionFilterStatus : undefined,
-      q: submissionFilterQuery.trim() || undefined,
-      created_from: submissionCreatedFrom ? `${submissionCreatedFrom}T00:00:00Z` : undefined,
-      created_to: submissionCreatedTo ? `${submissionCreatedTo}T23:59:59.999Z` : undefined,
-    };
+  function activateModule(module: WorkspaceModule, projectId = selectedProjectId) {
+    setActiveModule(module);
+    router.push(buildModuleHref(module, projectId));
   }
 
   function selectProject(projectId: number | null) {
     setSelectedProjectId(projectId);
     router.replace(buildModuleHref(activeModule, projectId));
-  }
-
-  function activateModule(module: WorkspaceModule, projectId = selectedProjectId) {
-    setActiveModule(module);
-    router.push(buildModuleHref(module, projectId));
   }
 
   useEffect(() => {
@@ -344,75 +216,24 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     if (projectIdFromUrl === null || projects.length === 0) {
       return;
     }
-
     if (!projects.some((project) => project.id === projectIdFromUrl)) {
       return;
     }
-
     setSelectedProjectId((current) => (current === projectIdFromUrl ? current : projectIdFromUrl));
   }, [projectIdFromUrl, projects]);
 
   useEffect(() => {
     if (!token) {
+      setProjects([]);
+      setDocuments([]);
+      setHistoricalBids([]);
+      setSelectedHistoricalBidId(null);
+      setHistoricalSections([]);
+      setHistoricalReuseUnits([]);
       return;
     }
     void hydrateConsole(token);
   }, [token]);
-
-  useEffect(() => {
-    if (!selectedProjectId) {
-      setResumeModule(null);
-      return;
-    }
-
-    const storedModule = getStorageItem(lastVisitedModuleStorageKey(selectedProjectId));
-    setResumeModule(isResumableModule(storedModule) ? storedModule : null);
-  }, [selectedProjectId]);
-
-  useEffect(() => {
-    if (!selectedProjectId || activeModule === "home") {
-      return;
-    }
-
-    setStorageItem(lastVisitedModuleStorageKey(selectedProjectId), activeModule);
-    setResumeModule(activeModule);
-  }, [activeModule, selectedProjectId]);
-
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      if (shouldCollapseCopilotOnInteraction({ open: copilotOpen, narrowViewport: isNarrowViewport(window), event })) {
-        setCopilotOpen(false);
-      }
-    };
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      const isEditableTarget =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target instanceof HTMLElement && target.isContentEditable);
-
-      if (event.key === "Escape") {
-        setCopilotOpen(false);
-        return;
-      }
-
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
-        event.preventDefault();
-        if (!isEditableTarget || copilotOpen) {
-          setCopilotOpen((current) => !current);
-        }
-      }
-    };
-
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [copilotOpen]);
 
   useEffect(() => {
     if (!token || selectedProjectId === null) {
@@ -422,161 +243,33 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     void refreshDocuments(token, selectedProjectId);
   }, [token, selectedProjectId]);
 
-  useEffect(() => {
-    if (!token) {
-      setKnowledgeBaseEntries([]);
-      setDecompositionRuns([]);
-      setGenerationJobs([]);
-      setSelectedGenerationJobId(null);
-      setGeneratedSections([]);
-      setReviewRuns([]);
-      setSelectedReviewRunId(null);
-      setReviewIssues([]);
-      setLayoutJobs([]);
-      setSelectedLayoutJobId(null);
-      setRenderedOutputs([]);
-      setSubmissionRecords([]);
-      return;
-    }
-    void refreshWorkbench(token, selectedProjectId ?? undefined);
-  }, [token, selectedProjectId]);
-
-  useEffect(() => {
-    setSelectedDecompositionRunId((current) =>
-      current !== null && decompositionRuns.some((item) => item.id === current) ? current : decompositionRuns[0]?.id ?? null,
-    );
-  }, [decompositionRuns]);
-
-  useEffect(() => {
-    setSelectedGenerationJobId((current) =>
-      current !== null && generationJobs.some((item) => item.id === current) ? current : generationJobs[0]?.id ?? null,
-    );
-  }, [generationJobs]);
-
-  useEffect(() => {
-    setSelectedReviewRunId((current) =>
-      current !== null && reviewRuns.some((item) => item.id === current) ? current : reviewRuns[0]?.id ?? null,
-    );
-  }, [reviewRuns]);
-
-  useEffect(() => {
-    setSelectedLayoutJobId((current) =>
-      current !== null && layoutJobs.some((item) => item.id === current) ? current : layoutJobs[0]?.id ?? null,
-    );
-  }, [layoutJobs]);
-
-  useEffect(() => {
-    if (!token || selectedGenerationJobId === null) {
-      setGeneratedSections([]);
-      return;
-    }
-    void loadGeneratedSections(token, selectedGenerationJobId);
-  }, [token, selectedGenerationJobId]);
-
-  useEffect(() => {
-    if (!token || selectedReviewRunId === null) {
-      setReviewIssues([]);
-      return;
-    }
-    void loadReviewIssues(token, selectedReviewRunId);
-  }, [token, selectedReviewRunId]);
-
-  useEffect(() => {
-    if (!token || selectedLayoutJobId === null) {
-      setRenderedOutputs([]);
-      return;
-    }
-    void loadRenderedOutputs(token, selectedLayoutJobId);
-  }, [token, selectedLayoutJobId]);
-
-  useEffect(() => {
-    const sourceDocumentId = selectedDecompositionRun?.source_document_id;
-    const sourceFilename = selectedDecompositionSourceDocument?.filename.toLowerCase() ?? "";
-    if (!token || !selectedProjectId || sourceDocumentId === null || sourceDocumentId === undefined) {
-      setDecompositionSourceMarkdown("");
-      setDecompositionSourcePreviewUrl(null);
-      setDecompositionPreviewBusy(false);
-      return;
-    }
-
-    let active = true;
-    let previewUrl: string | null = null;
-    void (async () => {
-      try {
-        setDecompositionPreviewBusy(true);
-        const markdownBlob = await downloadDocumentArtifact(token, selectedProjectId, sourceDocumentId, "markdown");
-        const markdown = await markdownBlob.text();
-        if (active) {
-          setDecompositionSourceMarkdown(markdown);
-        }
-
-        if (sourceFilename.endsWith(".pdf")) {
-          const sourceBlob = await downloadDocumentArtifact(token, selectedProjectId, sourceDocumentId, "source");
-          previewUrl = URL.createObjectURL(sourceBlob);
-          if (active) {
-            setDecompositionSourcePreviewUrl(previewUrl);
-          }
-        } else if (active) {
-          setDecompositionSourcePreviewUrl(null);
-        }
-      } catch {
-        if (active) {
-          setDecompositionSourceMarkdown("");
-          setDecompositionSourcePreviewUrl(null);
-        }
-      } finally {
-        if (active) {
-          setDecompositionPreviewBusy(false);
-        }
-      }
-    })();
-
-    return () => {
-      active = false;
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [token, selectedProjectId, selectedDecompositionRun, selectedDecompositionSourceDocument]);
-
   async function hydrateConsole(activeToken: string) {
     try {
-      setBusyLabel("正在整理项目和资料");
-      const [settingsPayload, projectRows, historicalRows] = await Promise.all([
+      const [runtime, projectRows, historicalRows] = await Promise.all([
         getRuntimeSettings(activeToken),
         listProjects(activeToken),
         listHistoricalBids(activeToken),
       ]);
-      setRuntimeSettings(settingsPayload);
+      setRuntimeSettings(runtime);
       setRuntimeForm((current) => ({
         platformConfig: {
-          provider: settingsPayload.provider,
-          apiBaseUrl: settingsPayload.api_base_url ?? DEFAULT_RUNTIME_API_BASE_URL,
+          provider: current.platformConfig.provider || runtime.platform_config.provider || "openai_compatible",
+          apiBaseUrl: runtime.platform_config.api_base_url ?? DEFAULT_RUNTIME_API_BASE_URL,
           apiKey: current.platformConfig.apiKey,
         },
         roleConfigs: buildRuntimeRoleConfigs(
-          settingsPayload.default_models,
-          settingsPayload.api_base_url ?? DEFAULT_RUNTIME_API_BASE_URL,
+          runtime.default_models,
+          runtime.platform_config.api_base_url ?? DEFAULT_RUNTIME_API_BASE_URL,
           current.roleConfigs,
         ),
       }));
       setProjects(projectRows);
       setHistoricalBids(historicalRows);
-      setSelectedProjectId((current) => {
-        if (current !== null && projectRows.some((project) => project.id === current)) {
-          return current;
-        }
-        if (projectIdFromUrl !== null && projectRows.some((project) => project.id === projectIdFromUrl)) {
-          return projectIdFromUrl;
-        }
-        return projectRows[0]?.id ?? null;
-      });
+      setSelectedProjectId((current) => current ?? projectRows[0]?.id ?? null);
       setSelectedHistoricalBidId((current) => current ?? historicalRows[0]?.id ?? null);
-      setMessage("项目和资料已同步完成。");
+      setMessage("投标资料库已同步。");
     } catch (error) {
       setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
     }
   }
 
@@ -585,63 +278,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       const rows = await listDocuments(activeToken, projectId);
       setDocuments(rows);
       setImportDocumentId((current) => current ?? rows[0]?.id ?? null);
-      setSelectedDocumentId((current) => current ?? rows[0]?.id ?? null);
-    } catch (error) {
-      setMessage(readError(error));
-    }
-  }
-
-  async function refreshWorkbench(
-    activeToken: string,
-    projectId?: number,
-    submissionFilters: SubmissionRecordFilters = buildSubmissionFilters(),
-  ) {
-    try {
-      const [
-        decompositionRows,
-        generationRows,
-        reviewRows,
-        layoutRows,
-        submissionRows,
-      ] = await Promise.all([
-        listDecompositionRuns(activeToken, projectId),
-        listGenerationJobs(activeToken, projectId),
-        listReviewRuns(activeToken, projectId),
-        listLayoutJobs(activeToken, projectId),
-        listSubmissionRecords(activeToken, projectId, submissionFilters),
-      ]);
-      setDecompositionRuns(decompositionRows);
-      setGenerationJobs(generationRows);
-      setReviewRuns(reviewRows);
-      setLayoutJobs(layoutRows);
-      setSubmissionRecords(submissionRows);
-    } catch (error) {
-      setMessage(readError(error));
-    }
-  }
-
-  async function loadGeneratedSections(activeToken: string, jobId: number) {
-    try {
-      const rows = await listGeneratedSections(activeToken, jobId);
-      setGeneratedSections(rows);
-    } catch (error) {
-      setMessage(readError(error));
-    }
-  }
-
-  async function loadReviewIssues(activeToken: string, runId: number) {
-    try {
-      const rows = await listReviewIssues(activeToken, runId);
-      setReviewIssues(rows);
-    } catch (error) {
-      setMessage(readError(error));
-    }
-  }
-
-  async function loadRenderedOutputs(activeToken: string, jobId: number) {
-    try {
-      const rows = await listRenderedOutputs(activeToken, jobId);
-      setRenderedOutputs(rows);
     } catch (error) {
       setMessage(readError(error));
     }
@@ -654,11 +290,57 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       const response = await login(loginEmail, loginPassword);
       setStoredToken(response.access_token);
       setToken(response.access_token);
-      setMessage("登录成功，可以开始处理项目了。");
+      setMessage("已登录，正在加载投标资料库。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
       setBusyLabel("");
+    }
+  }
+
+  function handleLogout() {
+    clearStoredToken();
+    setToken(null);
+    setMessage("已退出登录。");
+  }
+
+  async function handleConnectivityCheck(role: RuntimeRole | "platform") {
+    if (!token) {
+      return;
+    }
+    setCheckingRole(role);
+    setConnectivityRole(role);
+    try {
+      if (role === "platform") {
+        const payload = await runConnectivityCheck(token, {
+          provider: runtimeForm.platformConfig.provider,
+          api_base_url: runtimeForm.platformConfig.apiBaseUrl,
+          api_key: runtimeForm.platformConfig.apiKey,
+          model: runtimeForm.roleConfigs.ocr_role.model,
+        });
+        setConnectivityResult(payload);
+        return;
+      }
+      const roleConfig = runtimeForm.roleConfigs[role];
+      const payload = await runConnectivityCheck(token, {
+        provider: runtimeForm.platformConfig.provider,
+        api_base_url: roleConfig.apiBaseUrl || runtimeForm.platformConfig.apiBaseUrl,
+        api_key: roleConfig.apiKey || runtimeForm.platformConfig.apiKey,
+        model: roleConfig.model,
+      });
+      setConnectivityResult(payload);
+    } catch (error) {
+      setConnectivityResult({
+        ok: false,
+        provider: runtimeForm.platformConfig.provider,
+        api_base_url: runtimeForm.platformConfig.apiBaseUrl,
+        api_key_configured: false as never,
+        model: role === "platform" ? runtimeForm.roleConfigs.ocr_role.model : runtimeForm.roleConfigs[role].model,
+        status_code: error instanceof ApiError ? error.status : null,
+        message: readError(error),
+      } as RuntimeConnectivityResult);
+    } finally {
+      setCheckingRole(null);
     }
   }
 
@@ -669,12 +351,11 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     }
     try {
       setBusyLabel("正在创建项目");
-      const project = await createProject(token, projectName.trim());
-      const nextProjects = [...projects, project].sort((left, right) => left.id - right.id);
-      setProjects(nextProjects);
-      selectProject(project.id);
+      const created = await createProject(token, projectName.trim());
+      await hydrateConsole(token);
+      selectProject(created.id);
       setProjectName("");
-      setMessage(`项目 ${project.name} 已创建。`);
+      setMessage(`项目「${created.name}」已创建。`);
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -692,309 +373,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       await uploadDocument(token, selectedProjectId, uploadType, uploadFile);
       await refreshDocuments(token, selectedProjectId);
       setUploadFile(null);
-      setEvidenceResults([]);
-      setDocumentEvidenceUnits([]);
-      setMessage(`文档已上传到项目 ${selectedProject?.name ?? selectedProjectId}。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleApplySubmissionFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在筛选项目归档记录");
-      await refreshWorkbench(token, selectedProjectId ?? undefined, buildLibraryFilters(), buildSubmissionFilters());
-      setMessage("项目归档筛选结果已刷新。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleResetSubmissionFilters() {
-    if (!token) {
-      setSubmissionFilterStatus("all");
-      setSubmissionFilterQuery("");
-      setSubmissionCreatedFrom("");
-      setSubmissionCreatedTo("");
-      return;
-    }
-    try {
-      setBusyLabel("正在重置项目归档筛选");
-      setSubmissionFilterStatus("all");
-      setSubmissionFilterQuery("");
-      setSubmissionCreatedFrom("");
-      setSubmissionCreatedTo("");
-      await refreshWorkbench(token, selectedProjectId ?? undefined, buildLibraryFilters(), {});
-      setMessage("已重置项目归档筛选条件。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateDecompositionRun(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !selectedProjectId || !decompositionRunName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在创建招标分析任务");
-      await createDecompositionRun(token, {
-        project_id: selectedProjectId,
-        source_document_id: selectedDocumentId ?? undefined,
-        run_name: decompositionRunName.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId);
-      setMessage("招标分析任务已加入工作台。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateGenerationJob(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !selectedProjectId || !generationJobName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在创建内容编写任务");
-      const created = await createGenerationJob(token, {
-        project_id: selectedProjectId,
-        source_document_id: selectedDocumentId ?? undefined,
-        job_name: generationJobName.trim(),
-        target_sections: Number(generationTargetSections) || 0,
-      });
-      await refreshWorkbench(token, selectedProjectId);
-      setSelectedGenerationJobId(created.id);
-      setMessage("内容编写任务已加入工作台。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleApproveGenerationOutline() {
-    if (!token || selectedGenerationJobId === null || !selectedProjectId) {
-      return;
-    }
-    try {
-      setBusyLabel("正在审批生成框架");
-      await approveGenerationOutline(token, selectedGenerationJobId);
-      await refreshWorkbench(token, selectedProjectId);
-      setMessage("标书框架已审批通过，可继续章节编写与评审。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateReviewRun(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !selectedProjectId || !reviewRunName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在创建校核定稿任务");
-      const created = await createReviewRun(token, {
-        project_id: selectedProjectId,
-        source_document_id: selectedDocumentId ?? undefined,
-        run_name: reviewRunName.trim(),
-        review_mode: reviewMode.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId);
-      setSelectedReviewRunId(created.id);
-      setMessage("校核定稿任务已加入工作台。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateLayoutJob(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !selectedProjectId || !layoutJobName.trim() || !layoutTemplateName.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在创建排版导出任务");
-      const created = await createLayoutJob(token, {
-        project_id: selectedProjectId,
-        source_document_id: selectedDocumentId ?? undefined,
-        job_name: layoutJobName.trim(),
-        template_name: layoutTemplateName.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId);
-      setSelectedLayoutJobId(created.id);
-      setMessage("排版导出任务已加入工作台。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleCreateSubmissionRecord(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !selectedProjectId || !submissionTitle.trim() || !submissionStatus.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在创建项目归档记录");
-      await createSubmissionRecord(token, {
-        project_id: selectedProjectId,
-        source_document_id: selectedDocumentId ?? undefined,
-        title: submissionTitle.trim(),
-        status: submissionStatus.trim(),
-      });
-      await refreshWorkbench(token, selectedProjectId);
-      setMessage("项目归档记录已加入工作台。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleConfirmReviewRunPass() {
-    if (!token || selectedReviewRunId === null || !selectedProjectId) {
-      return;
-    }
-    try {
-      setBusyLabel("正在确认评审通过");
-      await confirmReviewRunPass(token, selectedReviewRunId);
-      await refreshWorkbench(token, selectedProjectId);
-      setMessage("校核已确认通过，可进入排版导出。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleRemediateReviewIssue(issueId: number) {
-    if (!token || selectedReviewRunId === null) {
-      return;
-    }
-    try {
-      setBusyLabel("正在打回重写章节");
-      const section = await remediateReviewIssue(token, issueId);
-      await Promise.all([
-        loadReviewIssues(token, selectedReviewRunId),
-        selectedGenerationJobId !== null ? loadGeneratedSections(token, selectedGenerationJobId) : Promise.resolve(),
-      ]);
-      setMessage(`章节 ${section.title} 已根据评审意见重写。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleDownloadDocumentArtifact(documentId: number, artifactType: string, filename: string) {
-    if (!token || !selectedProjectId) {
-      return;
-    }
-    try {
-      setBusyLabel(artifactType === "source" ? "正在下载原始文档" : "正在下载解析产物");
-      const blob = await downloadDocumentArtifact(token, selectedProjectId, documentId, artifactType);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(url);
-      setMessage("文档下载已开始。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleDownloadRenderedOutput(outputId: number, versionTag: string, outputType: string) {
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在下载排版产物");
-      const blob = await downloadRenderedOutput(token, outputId);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `bid-output-${versionTag}.${outputType}`;
-      link.click();
-      URL.revokeObjectURL(url);
-      setMessage("排版产物下载已开始。");
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleFeedSubmissionRecordToLibrary(recordId: number) {
-    if (!token) {
-      return;
-    }
-    try {
-      setBusyLabel("正在回灌标书到资料库");
-      const entry = await feedSubmissionRecordToLibrary(token, recordId);
-      await refreshWorkbench(token, selectedProjectId ?? undefined);
-      activateModule("knowledge-library");
-      setMessage(`标书记录 ${recordId} 已回灌到资料台账（${formatLibraryCategory(entry.category)}）。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleLoadEvidenceUnits(documentId: number) {
-    if (!token || !selectedProjectId) {
-      return;
-    }
-    try {
-      setBusyLabel("正在读取证据单元");
-      const rows = await listEvidenceUnits(token, selectedProjectId, documentId);
-      setSelectedDocumentId(documentId);
-      setDocumentEvidenceUnits(rows);
-      setMessage(`已加载文档 ${documentId} 的证据单元。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleSearchEvidence(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !selectedProjectId || !evidenceQuery.trim()) {
-      return;
-    }
-    try {
-      setBusyLabel("正在检索证据");
-      const rows = await searchEvidence(
-        token,
-        selectedProjectId,
-        evidenceQuery.trim(),
-        evidenceDocumentType || undefined,
-      );
-      setEvidenceResults(rows);
-      setMessage(`证据检索返回 ${rows.length} 条结果。`);
+      setMessage("文档已上传。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1008,19 +387,38 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在导入历史标书");
-      const created = await importHistoricalBid(token, {
+      setBusyLabel("正在导入历史样本");
+      await importHistoricalBid(token, {
         document_id: importDocumentId,
         source_type: historicalSourceType,
         project_type: historicalProjectType,
         region: historicalRegion,
-        year: Number(historicalYear),
+        year: Number(historicalYear) || new Date().getFullYear(),
         is_recommended: historicalRecommended,
       });
       const rows = await listHistoricalBids(token);
       setHistoricalBids(rows);
-      setSelectedHistoricalBidId(created.id);
-      setMessage(`历史标书 ${created.id} 已导入。`);
+      setSelectedHistoricalBidId(rows[0]?.id ?? null);
+      setMessage("历史样本已导入。");
+    } catch (error) {
+      setMessage(readError(error));
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleLoadHistoricalArtifacts() {
+    if (!token || !selectedHistoricalBidId) {
+      return;
+    }
+    try {
+      setBusyLabel("正在刷新历史样本");
+      const [sections, reuseUnits] = await Promise.all([
+        listHistoricalSections(token, selectedHistoricalBidId),
+        listHistoricalReuseUnits(token, selectedHistoricalBidId),
+      ]);
+      setHistoricalSections(sections);
+      setHistoricalReuseUnits(reuseUnits);
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1036,7 +434,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       setBusyLabel("正在重建章节");
       const rows = await rebuildHistoricalSections(token, selectedHistoricalBidId);
       setHistoricalSections(rows);
-      setMessage(`已生成 ${rows.length} 个历史章节。`);
+      setMessage("历史章节已重建。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1049,30 +447,10 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
       return;
     }
     try {
-      setBusyLabel("正在重建复用单元");
+      setBusyLabel("正在重建复用片段");
       const rows = await rebuildHistoricalReuseUnits(token, selectedHistoricalBidId);
       setHistoricalReuseUnits(rows);
-      setMessage(`已生成 ${rows.length} 个复用单元。`);
-    } catch (error) {
-      setMessage(readError(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleLoadHistoricalArtifacts() {
-    if (!token || !selectedHistoricalBidId) {
-      return;
-    }
-    try {
-      setBusyLabel("正在刷新历史标书详情");
-      const [sections, reuseUnits] = await Promise.all([
-        listHistoricalSections(token, selectedHistoricalBidId),
-        listHistoricalReuseUnits(token, selectedHistoricalBidId),
-      ]);
-      setHistoricalSections(sections);
-      setHistoricalReuseUnits(reuseUnits);
-      setMessage("历史标书详情已刷新。");
+      setMessage("复用片段已重建。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1082,14 +460,13 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
   async function handleSearchReuse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token || !historicalProjectType.trim() || !reuseSectionType.trim()) {
+    if (!token) {
       return;
     }
     try {
-      setBusyLabel("正在构建 reuse pack");
+      setBusyLabel("正在检索复用片段");
       const pack = await searchHistoricalReuse(token, historicalProjectType.trim(), reuseSectionType.trim());
       setReusePack(pack);
-      setMessage("历史复用候选已更新。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1099,26 +476,25 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
 
   async function handleVerifyLeakage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token || !selectedProjectId || !leakageDraftText.trim()) {
+    if (!token || !selectedProjectId) {
       return;
     }
     try {
-      setBusyLabel("正在执行历史污染校验");
+      setBusyLabel("正在校验历史污染");
       const result = await verifyHistoricalLeakage(token, selectedProjectId, leakageSectionId, {
-        draft_text: leakageDraftText.trim(),
+        draft_text: leakageDraftText,
         forbidden_legacy_terms: leakageForbiddenTerms
           .split(",")
-          .map((value) => value.trim())
+          .map((item) => item.trim())
           .filter(Boolean),
         history_candidate_pack: {
           reuse_unit_ids: leakageReuseUnitIds
             .split(",")
-            .map((value) => Number(value.trim()))
+            .map((item) => Number(item.trim()))
             .filter((value) => Number.isInteger(value) && value > 0),
         },
       });
       setLeakageResult(result);
-      setMessage(result.ok ? "未发现历史污染。" : "检测到历史污染项。");
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -1126,84 +502,25 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     }
   }
 
-  async function handleConnectivityCheck(role: RuntimeRole | "platform") {
-    if (!token) {
-      return;
+  function buildCopilotReply(prompt: string) {
+    const normalized = prompt.trim().toLowerCase();
+    if (normalized.includes("设置") || normalized.includes("api") || normalized.includes("模型")) {
+      setSettingsOpen(true);
+      return "我已打开设置。这里可以检查模型服务和接口配置。";
     }
-
-    const provider = runtimeForm.platformConfig.provider.trim();
-    const platformApiBaseUrl = runtimeForm.platformConfig.apiBaseUrl.trim();
-    const platformApiKey = runtimeForm.platformConfig.apiKey.trim();
-    const roleConfig = role === "platform" ? null : runtimeForm.roleConfigs[role];
-    const apiBaseUrl = role === "platform" ? platformApiBaseUrl : roleConfig?.apiBaseUrl.trim() || platformApiBaseUrl;
-    const apiKey = role === "platform" ? platformApiKey : roleConfig?.apiKey.trim() || platformApiKey;
-    const model = role === "platform" ? runtimeForm.roleConfigs.writer_role.model.trim() : roleConfig?.model.trim() ?? "";
-
-    if (!provider || !apiBaseUrl || !apiKey || !model) {
-      setMessage("请填写 AI 平台或角色自己的 API / URL，并填写模型名称。");
-      return;
-    }
-    try {
-      setBusyLabel("正在验证模型连通性");
-      setCheckingRole(role);
-      const result = await runConnectivityCheck(token, {
-        provider,
-        api_base_url: apiBaseUrl,
-        api_key: apiKey,
-        model,
-      });
-      setConnectivityRole(role);
-      setConnectivityResult(result);
-      setMessage(result.message);
-    } catch (error) {
-      setConnectivityRole(role);
-      setConnectivityResult(null);
-      setMessage(readError(error));
-    } finally {
-      setCheckingRole(null);
-      setBusyLabel("");
-    }
-  }
-
-  function handleLogout() {
-    clearStoredToken();
-    setToken(null);
-    setProjects([]);
-    setDocuments([]);
-    setHistoricalBids([]);
-    setKnowledgeBaseEntries([]);
-    setDecompositionRuns([]);
-    setGenerationJobs([]);
-    setReviewRuns([]);
-    setLayoutJobs([]);
-    setSubmissionRecords([]);
-    setEvidenceResults([]);
-    setDocumentEvidenceUnits([]);
-    setMessage("已退出登录。");
+    activateModule("knowledge-library");
+    return "我已切到投标资料库。你可以继续整理历史标书、规范规程和企业事实资料。";
   }
 
   function appendCopilotMessage(role: CopilotMessage["role"], text: string) {
     setCopilotMessages((current) => [
       ...current,
-      { id: `${role}-${Date.now()}-${current.length}`, role, text },
+      {
+        id: `${role}-${Date.now()}-${current.length}`,
+        role,
+        text,
+      },
     ]);
-  }
-
-  function buildCopilotReply(prompt: string) {
-    const normalized = prompt.trim().toLowerCase();
-    const moduleLabel = activeModuleMeta.label;
-    const projectLabel = selectedProject?.name ? `当前项目是「${selectedProject.name}」。` : "当前还没有选中项目。";
-
-    if (normalized.includes("资料") || normalized.includes("入库") || normalized.includes("上传")) {
-      activateModule("knowledge-library");
-      return `${projectLabel}我已经切到「投标资料库」。你可以继续整理历史标书、规范规程和企业事实资料。`;
-    }
-    if (normalized.includes("设置") || normalized.includes("api") || normalized.includes("模型")) {
-      setSettingsOpen(true);
-      return "我已打开设置。这里可以调整模型服务地址、密钥和各环节默认模型。";
-    }
-
-    return `你当前位于「${moduleLabel}」。${projectLabel}如果你愿意，我可以继续帮你解释投标资料库里的下一步操作，或帮你打开设置。`;
   }
 
   function handleCopilotSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1214,7 +531,6 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
     }
     appendCopilotMessage("user", prompt);
     setCopilotDraft("");
-    setCopilotOpen(true);
     appendCopilotMessage("assistant", buildCopilotReply(prompt));
   }
 
@@ -1229,7 +545,27 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             <span className="badge">{selectedProject ? "已选择项目" : "未选择项目"}</span>
           </div>
           <div className="stack">
-            <p>{selectedProject ? `当前项目：${selectedProject.name}` : "请先选择项目，再进入投标资料库。"}</p>
+            <p>{selectedProject ? `当前项目：${selectedProject.name}` : "请先创建或选择项目，再进入投标资料库。"}</p>
+            <form className="inline-form" onSubmit={handleCreateProject}>
+              <input
+                placeholder="新项目名称"
+                value={projectName}
+                onChange={(event) => setProjectName(event.target.value)}
+              />
+              <button className="primary-button" disabled={!token || !projectName.trim() || Boolean(busyLabel)} type="submit">
+                新建项目
+              </button>
+            </form>
+            <form className="inline-form" onSubmit={handleUploadDocument}>
+              <select value={uploadType} onChange={(event) => setUploadType(event.target.value)}>
+                <option value="proposal">投标文件</option>
+                <option value="norm">规范文件</option>
+              </select>
+              <input key={selectedProjectId ?? "no-project"} type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} />
+              <button className="ghost-button" disabled={!token || !selectedProjectId || !uploadFile || Boolean(busyLabel)} type="submit">
+                上传文档
+              </button>
+            </form>
             <button className="primary-button" onClick={() => activateModule("knowledge-library")} type="button">
               进入投标资料库
             </button>
@@ -1245,8 +581,7 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
         <section className="surface-card surface-card-login">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">开始使用</p>
-              <h3>登录后进入投标工作台</h3>
+              <h3>登录后进入投标资料库</h3>
             </div>
             <span className="badge">需先登录</span>
           </div>
@@ -1254,39 +589,21 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             <form className="stack" onSubmit={handleLogin}>
               <label>
                 邮箱
-                <input
-                  autoComplete="username"
-                  value={loginEmail}
-                  onChange={(event) => setLoginEmail(event.target.value)}
-                />
+                <input autoComplete="username" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
               </label>
               <label>
                 密码
-                <input
-                  autoComplete="current-password"
-                  type="password"
-                  value={loginPassword}
-                  onChange={(event) => setLoginPassword(event.target.value)}
-                />
+                <input autoComplete="current-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
               </label>
               <button className="primary-button" disabled={Boolean(busyLabel)} type="submit">
-                登录并开始处理
+                登录
               </button>
             </form>
-
             <div className="stack">
-              <div className="info-block">
-                <strong>界面原则</strong>
-                <p>左侧切换步骤，中间专注处理当前工作，右侧助手按需打开，设置统一收在抽屉里。</p>
-              </div>
               <div className="info-block">
                 <strong>默认账号</strong>
                 <p>`admin@example.com` / `admin123456`</p>
                 <p>`project_manager@example.com` / `manager123456`</p>
-              </div>
-              <div className="info-block">
-                <strong>助手能帮什么</strong>
-                <p>解释当前步骤、提醒下一步，并帮你快速切到资料上传、证据检索、历史复用、招标拆解、生成和校核。</p>
               </div>
             </div>
           </div>
@@ -1296,93 +613,60 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
   }
 
   function renderActiveModule() {
-    switch (activeModule) {
-      case "home":
-        return renderHomeWorkspace();
-      case "knowledge-library":
-        return (
-          <KnowledgeLibraryView
-            busyLabel={busyLabel}
-            documentEvidenceUnits={documentEvidenceUnits}
-            documents={documents}
-            evidenceDocumentType={evidenceDocumentType}
-            evidenceQuery={evidenceQuery}
-            evidenceResults={evidenceResults}
-            handleCreateProject={handleCreateProject}
-            handleImportHistoricalBid={handleImportHistoricalBid}
-            handleLoadEvidenceUnits={handleLoadEvidenceUnits}
-            handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
-            handleRebuildReuseUnits={handleRebuildReuseUnits}
-            handleRebuildSections={handleRebuildSections}
-            handleSearchEvidence={handleSearchEvidence}
-            handleSearchReuse={handleSearchReuse}
-            handleUploadDocument={handleUploadDocument}
-            handleVerifyLeakage={handleVerifyLeakage}
-            historicalBids={historicalBids}
-            historicalProjectType={historicalProjectType}
-            historicalRecommended={historicalRecommended}
-            historicalRegion={historicalRegion}
-            historicalReuseUnits={historicalReuseUnits}
-            historicalSections={historicalSections}
-            historicalSourceType={historicalSourceType}
-            historicalYear={historicalYear}
-            importDocumentId={importDocumentId}
-            leakageDraftText={leakageDraftText}
-            leakageForbiddenTerms={leakageForbiddenTerms}
-            leakageResult={leakageResult}
-            leakageReuseUnitIds={leakageReuseUnitIds}
-            leakageSectionId={leakageSectionId}
-            message={message}
-            onActivateModule={(module) => setActiveModule(module)}
-            onOpenCopilot={() => setCopilotOpen(true)}
-            projectName={projectName}
-            projects={projects}
-            reusePack={reusePack}
-            reuseSectionType={reuseSectionType}
-            selectedDocument={selectedDocument}
-            selectedDocumentId={selectedDocumentId}
-            selectedHistoricalBid={selectedHistoricalBid}
-            selectedProject={selectedProject}
-            selectedProjectId={selectedProjectId}
-            setEvidenceDocumentType={setEvidenceDocumentType}
-            setEvidenceQuery={setEvidenceQuery}
-            setHistoricalProjectType={setHistoricalProjectType}
-            setHistoricalRecommended={setHistoricalRecommended}
-            setHistoricalRegion={setHistoricalRegion}
-            setHistoricalSourceType={setHistoricalSourceType}
-            setHistoricalYear={setHistoricalYear}
-            setImportDocumentId={setImportDocumentId}
-            setLeakageDraftText={setLeakageDraftText}
-            setLeakageForbiddenTerms={setLeakageForbiddenTerms}
-            setLeakageReuseUnitIds={setLeakageReuseUnitIds}
-            setLeakageSectionId={setLeakageSectionId}
-            setProjectName={setProjectName}
-            setReuseSectionType={setReuseSectionType}
-            setSelectedHistoricalBidId={setSelectedHistoricalBidId}
-            setUploadFile={setUploadFile}
-            setUploadType={setUploadType}
-            token={token}
-            uploadType={uploadType}
-          />
-        );
-      default:
-        return renderHomeWorkspace();
+    if (activeModule === "knowledge-library") {
+      return (
+        <KnowledgeLibraryView
+          documents={documents}
+          historicalBids={historicalBids}
+          selectedProjectId={selectedProjectId}
+          selectedHistoricalBid={selectedHistoricalBid}
+          historicalSections={historicalSections}
+          historicalReuseUnits={historicalReuseUnits}
+          reusePack={reusePack}
+          importDocumentId={importDocumentId}
+          historicalSourceType={historicalSourceType}
+          historicalProjectType={historicalProjectType}
+          historicalRegion={historicalRegion}
+          historicalYear={historicalYear}
+          historicalRecommended={historicalRecommended}
+          reuseSectionType={reuseSectionType}
+          leakageSectionId={leakageSectionId}
+          leakageDraftText={leakageDraftText}
+          leakageForbiddenTerms={leakageForbiddenTerms}
+          leakageReuseUnitIds={leakageReuseUnitIds}
+          leakageResult={leakageResult}
+          token={token}
+          setImportDocumentId={setImportDocumentId}
+          setSelectedHistoricalBidId={setSelectedHistoricalBidId}
+          setHistoricalSourceType={setHistoricalSourceType}
+          setHistoricalProjectType={setHistoricalProjectType}
+          setHistoricalRegion={setHistoricalRegion}
+          setHistoricalYear={setHistoricalYear}
+          setHistoricalRecommended={setHistoricalRecommended}
+          setReuseSectionType={setReuseSectionType}
+          setLeakageSectionId={setLeakageSectionId}
+          setLeakageDraftText={setLeakageDraftText}
+          setLeakageForbiddenTerms={setLeakageForbiddenTerms}
+          setLeakageReuseUnitIds={setLeakageReuseUnitIds}
+          handleImportHistoricalBid={handleImportHistoricalBid}
+          handleLoadHistoricalArtifacts={handleLoadHistoricalArtifacts}
+          handleRebuildSections={handleRebuildSections}
+          handleRebuildReuseUnits={handleRebuildReuseUnits}
+          handleSearchReuse={handleSearchReuse}
+          handleVerifyLeakage={handleVerifyLeakage}
+        />
+      );
     }
+    return renderHomeWorkspace();
   }
+
+  const sidebarUserName = loginEmail.trim() || (token ? "AIBidder User" : "访客");
+  const sidebarUserAccountLabel = token ? loginEmail.trim() : "请先登录";
 
   return (
     <>
       <AppShell
         currentView={activeModule}
-        projectContext={{
-          projectName: selectedProject?.name ?? null,
-          deadlineLabel: "待确认",
-          stageLabel: activeModule === "home" ? "等待选择下一步" : activeModuleMeta.label,
-          reminderLabel: selectedProject
-            ? `当前建议先完成“${activeModule === "home" ? "资料准备" : activeModuleMeta.label}”。`
-            : "请先选择项目，再进入具体投标步骤。",
-        }}
-        showProjectContext={Boolean(token)}
         sidebar={
           <WorkspaceSidebar
             activeModule={activeModule}
@@ -1403,8 +687,9 @@ export function WorkspaceHome({ forcedModule }: { forcedModule?: WorkspaceModule
             userName={sidebarUserName}
           />
         }
-        subtitle={activeModuleMeta.hint}
-        title={activeModuleMeta.label}
+        showProjectContext={false}
+        subtitle={undefined}
+        title={activeModule === "knowledge-library" ? "投标资料库" : "首页"}
       >
         {token ? renderActiveModule() : renderLoginWorkspace()}
       </AppShell>
@@ -1465,7 +750,6 @@ function readError(error: unknown) {
   }
   return "发生未知错误";
 }
-
 
 export default function HomePage() {
   return <WorkspaceHome />;
