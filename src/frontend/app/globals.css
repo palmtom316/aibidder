@@ -189,27 +189,28 @@ textarea {
 .copilot-chip {
   min-height: var(--control-height);
   padding: 0 1rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  border: 1px solid #d9d9de;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   font-size: 0.93rem;
   font-weight: 600;
-  transition: transform 0.16s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
   white-space: nowrap;
 }
 
 .primary-button {
-  background: var(--accent);
+  background: #202123;
   color: #ffffff;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18);
+  box-shadow: none;
+  border-color: #202123;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: var(--accent-hover);
-  transform: translateY(-1px);
+  background: #111214;
+  border-color: #111214;
 }
 
 .copilot-trigger {
@@ -224,9 +225,9 @@ textarea {
   min-height: 2rem;
   padding: 0.2rem 0.28rem;
   border: 1px solid rgba(229, 231, 235, 0.72);
-  border-radius: 999px;
+  border-radius: 0.85rem;
   background: rgba(255, 255, 255, 0.66);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -249,7 +250,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: 0.7rem;
   background: rgba(243, 244, 246, 0.92);
   color: #6b7280;
   border: 1px solid rgba(229, 231, 235, 0.9);
@@ -329,18 +330,17 @@ textarea {
 .ghost-button,
 .sidebar-action,
 .copilot-chip {
-  background: rgba(255, 255, 255, 0.88);
-  color: var(--ink-soft);
-  border-color: var(--line);
-  box-shadow: var(--shadow-xs);
+  background: #ffffff;
+  color: #44474f;
+  border-color: #d9d9de;
+  box-shadow: none;
 }
 
 .ghost-button:hover:not(:disabled),
 .sidebar-action:hover:not(:disabled),
 .copilot-chip:hover:not(:disabled) {
-  background: #ffffff;
-  border-color: var(--line-strong);
-  transform: translateY(-1px);
+  background: #f7f7f8;
+  border-color: #cfd2d8;
 }
 
 .primary-button:disabled,
@@ -372,9 +372,9 @@ textarea {
   background: var(--bg-elevated);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(216, 224, 235, 0.95);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  box-shadow: none;
 }
 
 .surface-card,
@@ -415,8 +415,8 @@ textarea {
 .result-card:hover,
 .workbench-card:hover,
 .surface-card:hover {
-  border-color: rgba(37, 99, 235, 0.2);
-  box-shadow: var(--shadow-md);
+  border-color: #d6d9de;
+  box-shadow: none;
 }
 
 .eyebrow,
@@ -432,6 +432,15 @@ textarea {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.badge {
+  min-height: 2rem;
+  padding: 0.15rem 0.65rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #f7f7f8;
+  color: #6b7280;
 }
 
 .sidebar-copy,
@@ -1033,8 +1042,8 @@ textarea {
 }
 
 .list-item-active {
-  border-color: rgba(37, 99, 235, 0.42);
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+  border-color: #202123;
+  box-shadow: none;
 }
 
 .static-item {
@@ -1184,7 +1193,7 @@ textarea {
   grid-template-columns: auto 1fr;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-radius: var(--radius-sm);
+  border-radius: 0.8rem;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.92);
 }
@@ -1202,6 +1211,35 @@ textarea {
 .copilot-composer {
   display: grid;
   gap: var(--space-3);
+}
+
+.copilot-panel .ghost-button,
+.copilot-panel .primary-button {
+  min-height: 2.2rem;
+  border-radius: 0.8rem;
+  box-shadow: none;
+  transform: none;
+}
+
+.copilot-panel .ghost-button {
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink-soft);
+  border-color: var(--line);
+}
+
+.copilot-panel .ghost-button:hover:not(:disabled) {
+  background: #ffffff;
+  border-color: var(--line-strong);
+  transform: none;
+}
+
+.copilot-panel .primary-button {
+  background: #202123;
+}
+
+.copilot-panel .primary-button:hover:not(:disabled) {
+  background: #111214;
+  transform: none;
 }
 
 .copilot-fab {
@@ -1419,15 +1457,15 @@ textarea {
   width: fit-content;
   padding: 0.18rem;
   border: 1px solid #e5e7eb;
-  border-radius: 999px;
+  border-radius: 0.8rem;
   background: rgba(255, 255, 255, 0.86);
 }
 
 .settings-tab {
-  min-height: 1.85rem;
-  padding: 0 0.68rem;
+  min-height: 1.95rem;
+  padding: 0 0.8rem;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0.62rem;
   background: transparent;
   color: #6b7280;
   font-size: 0.9rem;
@@ -1493,6 +1531,10 @@ textarea {
   gap: 0.45rem;
 }
 
+.settings-role-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .settings-inline-chip {
   display: inline-flex;
   align-items: center;
@@ -1503,18 +1545,6 @@ textarea {
   color: #6b7280;
   font-size: 0.68rem;
   font-weight: 600;
-}
-
-.settings-role-inline-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 0.6rem;
-}
-
-.settings-role-inline-body-advanced {
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr) auto;
-  align-items: end;
 }
 
 .settings-role-inline-field {
@@ -1553,8 +1583,9 @@ textarea {
 }
 
 .settings-chat-input {
-  min-height: 2.45rem;
-  border-radius: 0.95rem;
+  min-height: 2.15rem;
+  padding: 0.62rem 0.82rem;
+  border-radius: 0.68rem;
   border-color: #e5e7eb;
   background: #ffffff;
   box-shadow: none;
@@ -1575,9 +1606,9 @@ textarea {
 }
 
 .settings-chat-button {
-  min-height: 2.3rem;
+  min-height: 2.15rem;
   padding: 0 0.9rem;
-  border-radius: 999px;
+  border-radius: 0.7rem;
   background: #202123;
   box-shadow: none;
 }
@@ -1602,28 +1633,6 @@ textarea {
   gap: var(--space-4);
 }
 
-.copilot-summary {
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.copilot-section {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.copilot-section-title {
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-}
-
-.copilot-quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
 .chat-timeline {
   flex: 1;
   min-height: 220px;
@@ -1632,7 +1641,7 @@ textarea {
 .copilot-empty-chat {
   padding: var(--space-5);
   border: 1px dashed var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: 0.8rem;
   color: var(--text-secondary);
   background: rgba(248, 250, 252, 0.7);
   text-align: center;

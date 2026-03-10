@@ -534,14 +534,13 @@ export function KnowledgeLibraryV2Panel({
   }
 
   return (
-    <section className="workspace-stack">
-      <section className="surface-card">
+    <section className="workspace-stack library-v2-shell">
+      <section className="surface-card library-v2-card">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">新版资料库</p>
-            <h3>8 类资料统一入库</h3>
+            <h3>投标资料库</h3>
           </div>
-          <span className="badge">{busyLabel || "可录入"}</span>
+          <span className="badge">{busyLabel || "就绪"}</span>
         </div>
 
         <div className="list-actions">
@@ -580,26 +579,10 @@ export function KnowledgeLibraryV2Panel({
           </button>
         </div>
 
-        <div className="summary-list">
-          <div className="summary-item">
-            <span>当前分类记录</span>
-            <strong>{records.length}</strong>
-          </div>
-          <div className="summary-item">
-            <span>待复核任务</span>
-            <strong>{pendingReviews.length}</strong>
-          </div>
-          <div className="summary-item">
-            <span>检索结果</span>
-            <strong>{searchResults.length}</strong>
-          </div>
-        </div>
-
         {pendingReviews.length > 0 ? (
-          <section className="surface-card">
+          <section className="surface-card library-v2-subcard">
             <div className="panel-header compact">
               <div>
-                <p className="eyebrow">待复核</p>
                 <h3>优先处理这些资料</h3>
               </div>
               <span className="badge">{pendingReviews.length}</span>
@@ -722,10 +705,9 @@ export function KnowledgeLibraryV2Panel({
         </div>
 
         <div className="workspace-grid workspace-grid-2">
-          <section className="surface-card">
+          <section className="surface-card library-v2-subcard">
             <div className="panel-header compact">
               <div>
-                <p className="eyebrow">详情</p>
                 <h3>{selectedRecordDetail?.title || "未选择记录"}</h3>
               </div>
               <span className="badge">{selectedRecordDetail ? selectedRecordDetail.record_type : "空"}</span>
@@ -825,10 +807,9 @@ export function KnowledgeLibraryV2Panel({
             )}
           </section>
 
-          <section className="surface-card">
+          <section className="surface-card library-v2-subcard">
             <div className="panel-header compact">
               <div>
-                <p className="eyebrow">切块预览</p>
                 <h3>供 AI 编写与查询使用</h3>
               </div>
             </div>
@@ -848,10 +829,9 @@ export function KnowledgeLibraryV2Panel({
           </section>
         </div>
 
-        <section className="surface-card">
+        <section className="surface-card library-v2-subcard">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">历史复用</p>
               <h3>历史样本入库与复用校验</h3>
             </div>
             <span className="badge">{historicalBids.length} 份</span>
