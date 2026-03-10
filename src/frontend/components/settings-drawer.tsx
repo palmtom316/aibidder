@@ -88,8 +88,11 @@ export function SettingsDrawer({
     <div className={`settings-drawer-wrap ${open ? "is-open" : ""}`} aria-hidden={!open}>
       <button className="drawer-backdrop" onClick={onClose} type="button" />
       <aside className="settings-drawer settings-drawer-chatgpt settings-drawer-compact" aria-label="模型设置">
-        <div className="drawer-header settings-header-minimal">
-          <h3>模型设置</h3>
+        <div className="drawer-header settings-header-minimal diagnostic-header">
+          <div className="drawer-title-group">
+            <span className="badge">Settings</span>
+            <h3>模型设置</h3>
+          </div>
           <button className="ghost-button settings-close-button" onClick={onClose} type="button">
             关闭
           </button>
@@ -159,11 +162,7 @@ export function SettingsDrawer({
               <button
                 className="primary-button settings-chat-button"
                 disabled={
-                  disabled ||
-                  checkingRole === "platform" ||
-                  !runtimeForm.platformConfig.provider.trim() ||
-                  !runtimeForm.platformConfig.apiBaseUrl.trim() ||
-                  !runtimeForm.platformConfig.apiKey.trim()
+                  disabled || checkingRole === "platform"
                 }
                 onClick={() => onCheckRole("platform")}
                 type="button"
@@ -193,7 +192,7 @@ export function SettingsDrawer({
                     ) : null}
                   </div>
 
-                  <div className="settings-role-inline-body settings-role-inline-body-advanced">
+                  <div className="settings-platform-grid settings-role-grid">
                     <label className="settings-role-inline-field settings-role-inline-model-field">
                       模型名称
                       <input
@@ -205,6 +204,15 @@ export function SettingsDrawer({
                       />
                     </label>
                     <label className="settings-role-inline-field">
+                      Base URL
+                      <input
+                        autoComplete="url"
+                        className="settings-chat-input"
+                        value={roleConfig.apiBaseUrl}
+                        onChange={(event) => onRoleFieldChange(role, "apiBaseUrl", event.target.value)}
+                      />
+                    </label>
+                    <label className="settings-role-inline-field settings-platform-key-field">
                       API Key
                       <input
                         autoComplete="new-password"
@@ -214,23 +222,13 @@ export function SettingsDrawer({
                         onChange={(event) => onRoleFieldChange(role, "apiKey", event.target.value)}
                       />
                     </label>
-                    <label className="settings-role-inline-field">
-                      Base URL
-                      <input
-                        autoComplete="url"
-                        className="settings-chat-input"
-                        value={roleConfig.apiBaseUrl}
-                        onChange={(event) => onRoleFieldChange(role, "apiBaseUrl", event.target.value)}
-                      />
-                    </label>
+                  </div>
+
+                  <div className="settings-role-actions">
                     <button
                       className="primary-button settings-chat-button"
                       disabled={
-                        disabled ||
-                        isChecking ||
-                        !roleConfig.model.trim() ||
-                        !(runtimeForm.platformConfig.apiKey.trim() || roleConfig.apiKey.trim()) ||
-                        !(runtimeForm.platformConfig.apiBaseUrl.trim() || roleConfig.apiBaseUrl.trim())
+                        disabled || isChecking
                       }
                       onClick={() => onCheckRole(role)}
                       type="button"

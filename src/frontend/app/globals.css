@@ -1141,7 +1141,7 @@ textarea {
 .drawer-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(15, 23, 42, 0.22);
+  background: rgba(0, 0, 0, 0.18);
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -1154,19 +1154,20 @@ textarea {
 .copilot-panel,
 .settings-drawer {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: min(440px, 100vw);
-  height: 100vh;
-  padding: var(--space-6);
+  top: 1.25rem;
+  right: 1.25rem;
+  width: min(480px, calc(100vw - 2rem));
+  height: calc(100vh - 2.5rem);
+  padding: 1rem;
   display: grid;
   align-content: start;
   gap: var(--space-4);
-  border-radius: 0;
-  border-left: 1px solid rgba(216, 224, 235, 0.95);
-  box-shadow: -24px 0 56px rgba(15, 23, 42, 0.12);
+  border-radius: 1.5rem;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 40px rgba(15, 23, 42, 0.08);
   transform: translateX(100%);
   transition: transform 0.24s ease;
+  background: #f7f7f8;
 }
 
 .copilot-wrap.is-open .copilot-panel,
@@ -1176,8 +1177,19 @@ textarea {
 
 .copilot-header,
 .drawer-header {
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.diagnostic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drawer-title-group {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .copilot-messages {
@@ -1193,19 +1205,19 @@ textarea {
   grid-template-columns: auto 1fr;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-radius: 0.8rem;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: 1rem;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
 }
 
 .copilot-message-assistant {
-  border-color: rgba(37, 99, 235, 0.16);
-  background: rgba(37, 99, 235, 0.06);
+  border-color: #e5e7eb;
+  background: #ffffff;
 }
 
 .copilot-message-user {
-  border-color: rgba(20, 32, 51, 0.1);
-  background: rgba(20, 32, 51, 0.04);
+  border-color: #d9d9de;
+  background: #f7f7f8;
 }
 
 .copilot-composer {
@@ -1426,10 +1438,10 @@ textarea {
 
 .settings-drawer-chatgpt {
   gap: 0.7rem;
-  width: min(520px, 100vw);
-  padding: 0.85rem;
+  width: min(520px, calc(100vw - 2rem));
+  padding: 1rem;
   background: #f7f7f8;
-  border-left: 1px solid #ececf1;
+  border: 1px solid #ececf1;
 }
 
 .settings-drawer-compact {
@@ -1444,9 +1456,9 @@ textarea {
 .settings-close-button {
   min-height: 2.2rem;
   padding-inline: 0.9rem;
-  border-radius: 999px;
-  background: transparent;
-  border-color: transparent;
+  border-radius: 0.8rem;
+  background: #ffffff;
+  border-color: #e5e7eb;
   box-shadow: none;
 }
 
@@ -1464,7 +1476,7 @@ textarea {
 .settings-tab {
   min-height: 1.95rem;
   padding: 0 0.8rem;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 0.62rem;
   background: transparent;
   color: #6b7280;
@@ -1475,7 +1487,8 @@ textarea {
 .settings-tab-active {
   background: #ffffff;
   color: #202123;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  border-color: #e5e7eb;
+  box-shadow: none;
 }
 
 .settings-role-stack {
@@ -1490,11 +1503,11 @@ textarea {
 .settings-role-card {
   display: grid;
   gap: 0.6rem;
-  padding: 0.8rem;
+  padding: 1rem;
   border: 1px solid #e5e7eb;
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  border-radius: 1.1rem;
+  background: #ffffff;
+  box-shadow: none;
 }
 
 .settings-role-card-header {
@@ -1583,10 +1596,10 @@ textarea {
 }
 
 .settings-chat-input {
-  min-height: 2.15rem;
-  padding: 0.62rem 0.82rem;
-  border-radius: 0.68rem;
-  border-color: #e5e7eb;
+  min-height: 2.35rem;
+  padding: 0.72rem 0.9rem;
+  border-radius: 0.85rem;
+  border-color: #d9d9de;
   background: #ffffff;
   box-shadow: none;
 }
@@ -1653,6 +1666,10 @@ textarea {
 
 .chat-input {
   width: 100%;
-  min-height: 96px;
+  min-height: 112px;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border-color: #d9d9de;
+  background: #ffffff;
   resize: vertical;
 }
