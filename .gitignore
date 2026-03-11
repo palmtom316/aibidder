@@ -29,3 +29,4 @@ dist/
 
 # Local agent/tooling state
 .omx/
+.codex/tmp/
